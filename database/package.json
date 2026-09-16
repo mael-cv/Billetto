@@ -1,0 +1,10 @@
+{
+  "name": "@billetto/database",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node scripts/migrate.mjs",
+    "reset": "node scripts/migrate.mjs --reset",
+    "seed": "node scripts/seed.mjs"
+  }
+}

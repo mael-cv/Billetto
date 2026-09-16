@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Billetto (docker)",
+      "Group": "Billetto",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "billetto",
+      "Username": "billetto_owner",
+      "SSLMode": "prefer"
+    }
+  }
+}

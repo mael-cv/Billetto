@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model amities {
+  id                                                BigInt       @id(map: "pk_amities") @default(autoincrement())
+  utilisateur_id                                    BigInt
+  ami_id                                            BigInt
+  statut                                            String       @default("pending")
+  created_at                                        DateTime     @default(now()) @db.Timestamptz(6)
+  utilisateurs_amities_ami_idToutilisateurs         utilisateurs @relation("amities_ami_idToutilisateurs", fields: [ami_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_amities_ami_id")
+  utilisateurs_amities_utilisateur_idToutilisateurs utilisateurs @relation("amities_utilisateur_idToutilisateurs", fields: [utilisateur_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_amities_utilisateur_id")
+
+  @@unique([utilisateur_id, ami_id], map: "uq_amities_utilisateur_id_ami_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model billets {
+  id             BigInt       @id(map: "pk_billets") @default(autoincrement())
+  tarif_id       BigInt
+  commande_id    BigInt
+  utilisateur_id BigInt
+  code           String       @unique(map: "uq_billets_code") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prix_paye      Decimal      @db.Decimal(10, 2)
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  commandes      commandes    @relation(fields: [commande_id], references: [id], onUpdate: NoAction, map: "fk_billets_commande_id")
+  tarifs         tarifs       @relation(fields: [tarif_id], references: [id], onUpdate: NoAction, map: "fk_billets_tarif_id")
+  utilisateurs   utilisateurs @relation(fields: [utilisateur_id], references: [id], onUpdate: NoAction, map: "fk_billets_utilisateur_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model commandes {
+  id             BigInt       @id(map: "pk_commandes") @default(autoincrement())
+  utilisateur_id BigInt
+  statut         String       @default("pending")
+  montant_total  Decimal      @default(0) @db.Decimal(12, 2)
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime     @default(now()) @db.Timestamptz(6)
+  billets        billets[]
+  utilisateurs   utilisateurs @relation(fields: [utilisateur_id], references: [id], onUpdate: NoAction, map: "fk_commandes_utilisateur_id")
+  paiements      paiements[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model evenement_attributs {
+  id           BigInt     @id(map: "pk_evenement_attributs") @default(autoincrement())
+  evenement_id BigInt
+  cle          String
+  valeur       String
+  evenements   evenements @relation(fields: [evenement_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_evenement_attributs_evenement_id")
+
+  @@unique([evenement_id, cle], map: "uq_evenement_attributs_evenement_id_cle")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model evenements {
+  id                  BigInt                @id(map: "pk_evenements") @default(autoincrement())
+  organisateur_id     BigInt
+  lieu_id             BigInt
+  type_evenement_id   BigInt
+  nom                 String
+  slug                String                @unique(map: "uq_evenements_slug")
+  description         String                @default("")
+  debut               DateTime              @db.Timestamptz(6)
+  fin                 DateTime              @db.Timestamptz(6)
+  statut              String                @default("draft")
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  evenement_attributs evenement_attributs[]
+  lieux               lieux                 @relation(fields: [lieu_id], references: [id], onUpdate: NoAction, map: "fk_evenements_lieu_id")
+  organisateurs       organisateurs         @relation(fields: [organisateur_id], references: [id], onUpdate: NoAction, map: "fk_evenements_organisateur_id")
+  type_evenements     type_evenements       @relation(fields: [type_evenement_id], references: [id], onUpdate: NoAction, map: "fk_evenements_type_evenement_id")
+  tarifs              tarifs[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model journal_tarifs {
+  id            BigInt   @id(map: "pk_journal_tarifs") @default(autoincrement())
+  tarif_id      BigInt
+  ancien_prix   Decimal? @db.Decimal(10, 2)
+  nouveau_prix  Decimal? @db.Decimal(10, 2)
+  ancien_quota  Int?
+  nouveau_quota Int?
+  action        String
+  auteur        String   @default(dbgenerated("CURRENT_USER"))
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model lieux {
+  id          BigInt       @id(map: "pk_lieux") @default(autoincrement())
+  nom         String
+  adresse     String
+  ville       String
+  code_postal String
+  capacite    Int
+  created_at  DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime     @default(now()) @db.Timestamptz(6)
+  evenements  evenements[]
+
+  @@unique([nom, ville], map: "uq_lieux_nom_ville")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model organisateurs {
+  id           BigInt         @id(map: "pk_organisateurs") @default(autoincrement())
+  nom          String
+  email        String         @unique(map: "uq_organisateurs_email")
+  created_at   DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime       @default(now()) @db.Timestamptz(6)
+  evenements   evenements[]
+  utilisateurs utilisateurs[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model paiements {
+  id          BigInt    @id(map: "pk_paiements") @default(autoincrement())
+  commande_id BigInt
+  reference   String    @unique(map: "uq_paiements_reference")
+  type        String    @default("charge")
+  montant     Decimal   @db.Decimal(12, 2)
+  statut      String    @default("pending")
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  commandes   commandes @relation(fields: [commande_id], references: [id], onUpdate: NoAction, map: "fk_paiements_commande_id")
+}
+
+model schema_migrations {
+  version    String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tarifs {
+  id               BigInt     @id(map: "pk_tarifs") @default(autoincrement())
+  evenement_id     BigInt
+  nom              String
+  prix             Decimal    @db.Decimal(10, 2)
+  quota            Int
+  date_debut_vente DateTime   @db.Timestamptz(6)
+  date_fin_vente   DateTime   @db.Timestamptz(6)
+  actif            Boolean    @default(true)
+  created_at       DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime   @default(now()) @db.Timestamptz(6)
+  billets          billets[]
+  evenements       evenements @relation(fields: [evenement_id], references: [id], onUpdate: NoAction, map: "fk_tarifs_evenement_id")
+
+  @@unique([evenement_id, nom], map: "uq_tarifs_evenement_id_nom")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model type_evenements {
+  id                    BigInt            @id(map: "pk_type_evenements") @default(autoincrement())
+  parent_id             BigInt?
+  nom                   String
+  evenements            evenements[]
+  type_evenements       type_evenements?  @relation("type_evenementsTotype_evenements", fields: [parent_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_type_evenements_parent_id")
+  other_type_evenements type_evenements[] @relation("type_evenementsTotype_evenements")
+
+  @@unique([parent_id, nom], map: "uq_type_evenements_parent_id_nom")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model utilisateurs {
+  id                                           BigInt         @id(map: "pk_utilisateurs") @default(autoincrement())
+  email                                        String         @unique(map: "uq_utilisateurs_email")
+  password_hash                                String
+  prenom                                       String
+  nom                                          String
+  role_app                                     String         @default("visitor")
+  organisateur_id                              BigInt?
+  created_at                                   DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at                                   DateTime       @default(now()) @db.Timestamptz(6)
+  amities_amities_ami_idToutilisateurs         amities[]      @relation("amities_ami_idToutilisateurs")
+  amities_amities_utilisateur_idToutilisateurs amities[]      @relation("amities_utilisateur_idToutilisateurs")
+  billets                                      billets[]
+  commandes                                    commandes[]
+  organisateurs                                organisateurs? @relation(fields: [organisateur_id], references: [id], onUpdate: NoAction, map: "fk_utilisateurs_organisateur_id")
+}

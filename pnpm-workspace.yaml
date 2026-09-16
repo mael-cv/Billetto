@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - database
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - esbuild
