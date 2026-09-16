@@ -31,6 +31,14 @@ for (const file of list('queries')) {
   }
 }
 
+console.log('\n» sécurité en connexion réelle billetto_app');
+{
+  const res = spawnSync(process.execPath, [fileURLToPath(new URL('./security-login.mjs', import.meta.url))], {
+    stdio: 'inherit',
+  });
+  if (res.status !== 0) failed++;
+}
+
 console.log('\n» concurrence (sessions parallèles)');
 {
   const res = spawnSync(process.execPath, [fileURLToPath(new URL('./concurrency.mjs', import.meta.url))], {

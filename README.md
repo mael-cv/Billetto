@@ -8,7 +8,7 @@ PostgreSQL calcule, contrôle et protège ; l'API et le front restent fins.
 - **Base** : PostgreSQL 17, SQL versionné — `database/`
 - **Outils** : Docker Compose, pgAdmin
 
-> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN) et 04 (fonctions, triggers) livrées.
+> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers) et 05 (rôles, GRANT, RLS) livrées.
 
 ## Prérequis
 - Docker Desktop
@@ -50,10 +50,10 @@ Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de 
 | Commande | Rôle |
 |----------|------|
 | `pnpm infra:up` / `pnpm infra:down` | Démarrer / arrêter PostgreSQL et pgAdmin |
-| `pnpm db:migrate` | Appliquer les migrations SQL |
+| `pnpm db:migrate` | Appliquer les migrations SQL et activer la connexion `billetto_app` (`APP_DB_PASSWORD`) |
 | `pnpm db:reset` | Supprimer le schéma et réappliquer les migrations |
 | `pnpm db:seed:small` / `pnpm db:seed:full` | Charger les données (`SEED=20260916` par défaut) |
-| `pnpm db:test` | Tests SQL (requêtes, vues, MV, fonctions, triggers) + test de concurrence d'achat |
+| `pnpm db:test` | Tests SQL (requêtes, vues, MV, fonctions, triggers, sécurité) + connexion réelle `billetto_app` + concurrence d'achat |
 | `pnpm db:refresh-mv` | Rafraîchir la vue matérialisée (`--blocking` pour le mode classique) |
 | `pnpm db:benchmark before\|after\|compare` | Plans `EXPLAIN (ANALYZE, BUFFERS)` avant/après index (seed FULL) |
 | `pnpm db:pull` | Régénérer `prisma/schema.prisma` depuis la base |
@@ -80,6 +80,7 @@ doc/            documentation et phases
 - [Phases : objectifs, spécifications, critères d'acceptation](doc/phases/README.md)
 - [Base de données](doc/database.md)
 - [Performance](doc/performance.md)
+- [Sécurité](doc/security.md)
 - [Décisions](doc/decisions.md)
 
 ## Démonstration SQL avancé

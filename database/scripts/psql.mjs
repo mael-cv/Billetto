@@ -2,6 +2,13 @@
 // Les fichiers SQL sont montés en lecture seule sur /database.
 import { spawnSync } from 'node:child_process';
 
+// Charge le .env de la racine s'il existe (les variables déjà définies priment).
+try {
+  process.loadEnvFile(new URL('../../.env', import.meta.url));
+} catch {
+  // pas de .env : on garde l'environnement courant
+}
+
 export function psql(args, { settings = {}, input, capture = false } = {}) {
   const pgOptions = Object.entries(settings)
     .map(([k, v]) => `-c ${k}=${v}`)

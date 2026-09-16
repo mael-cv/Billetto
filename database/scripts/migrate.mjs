@@ -35,4 +35,21 @@ for (const file of files) {
   psql(['-1', '-f', `/database/migrations/${file}`, '-c',
         `INSERT INTO schema_migrations (version) VALUES ('${file.replace(/'/g, "''")}')`]);
 }
+// Compte applicatif : mot de passe jamais versionné, lu depuis APP_DB_PASSWORD.
+// Passé en variable psql sur l'entrée standard (:'app_password' est échappé par psql).
+const hasAppRole = psql(['-At', '-c', "SELECT 1 FROM pg_roles WHERE rolname = 'billetto_app'"], {
+  capture: true,
+}).trim();
+if (hasAppRole) {
+  if (process.env.APP_DB_PASSWORD) {
+    psql(['-v', `app_password=${process.env.APP_DB_PASSWORD}`], {
+      input: "ALTER ROLE billetto_app WITH LOGIN PASSWORD :'app_password';\n",
+    });
+    console.log('» billetto_app : LOGIN activé (mot de passe depuis APP_DB_PASSWORD)');
+  } else {
+    psql(['-c', 'ALTER ROLE billetto_app NOLOGIN']);
+    console.warn('» APP_DB_PASSWORD absent : billetto_app reste NOLOGIN');
+  }
+}
+
 console.log('✓ migrations à jour');
