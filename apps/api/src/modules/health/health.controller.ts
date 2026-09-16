@@ -1,16 +1,17 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
+import { Controller, Get, HttpStatus } from '@nestjs/common';
+import { DbContextService } from '../../common/database/db-context.service';
+import { ApiError } from '../../common/errors/http-errors';
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: DbContextService) {}
 
   @Get()
   async check(): Promise<{ status: 'ok'; database: 'up' }> {
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await this.db.raw().$queryRaw`SELECT 1`;
     } catch {
-      throw new ServiceUnavailableException('database unavailable');
+      throw new ApiError(HttpStatus.SERVICE_UNAVAILABLE, 'BASE_INDISPONIBLE', 'Base de données indisponible');
     }
     return { status: 'ok', database: 'up' };
   }

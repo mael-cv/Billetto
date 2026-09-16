@@ -1,0 +1,10 @@
+{
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/.*\\.e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", { "tsconfig": "tsconfig.test.json" }]
+  },
+  "testTimeout": 120000,
+  "maxWorkers": 1
+}

@@ -1,17 +1,18 @@
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
-import { AppModule } from './app.module';
+import { resolve } from 'node:path';
+import { createApp } from './app.factory';
+import { loadConfig } from './common/config/config';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter({ bodyLimit: 100_000, trustProxy: false }),
-  );
-  app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: process.env.CORS_ORIGIN ?? 'http://localhost:3000', credentials: true });
-  app.enableShutdownHooks();
-  await app.listen(Number(process.env.API_PORT ?? 3001), '0.0.0.0');
+  try {
+    // En développement, .env à la racine du monorepo. En conteneur, variables d'environnement.
+    process.loadEnvFile(resolve(__dirname, '../../../.env'));
+  } catch {
+    // pas de fichier .env
+  }
+  const config = loadConfig();
+  const app = await createApp(config);
+  await app.listen(config.API_PORT, '0.0.0.0');
 }
 
 void bootstrap();

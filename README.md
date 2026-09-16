@@ -8,7 +8,7 @@ PostgreSQL calcule, contrôle et protège ; l'API et le front restent fins.
 - **Base** : PostgreSQL 17, SQL versionné — `database/`
 - **Outils** : Docker Compose, pgAdmin
 
-> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers) et 05 (rôles, GRANT, RLS) livrées.
+> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers), 05 (rôles, GRANT, RLS) et 06 (API NestJS) livrées.
 
 ## Prérequis
 - Docker Desktop
@@ -56,8 +56,20 @@ Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de 
 | `pnpm db:test` | Tests SQL (requêtes, vues, MV, fonctions, triggers, sécurité) + connexion réelle `billetto_app` + concurrence d'achat |
 | `pnpm db:refresh-mv` | Rafraîchir la vue matérialisée (`--blocking` pour le mode classique) |
 | `pnpm db:benchmark before\|after\|compare` | Plans `EXPLAIN (ANALYZE, BUFFERS)` avant/après index (seed FULL) |
+| `pnpm db:seed:demo` | (Re)créer les comptes de démonstration |
+| `pnpm test:e2e` | Tests de bout en bout de l'API sur la base |
 | `pnpm db:pull` | Régénérer `prisma/schema.prisma` depuis la base |
 | `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm test` | Développement et qualité |
+
+## Comptes de démonstration
+
+| E-mail | Rôle |
+|--------|------|
+| `demo-visiteur@billetto.test` | visiteur |
+| `demo-organisateur@billetto.test` | organisateur |
+| `demo-admin@billetto.test` | administrateur |
+
+Mot de passe : valeur de `DEMO_PASSWORD` dans `.env` (développement uniquement).
 
 ## Structure
 
@@ -81,6 +93,7 @@ doc/            documentation et phases
 - [Base de données](doc/database.md)
 - [Performance](doc/performance.md)
 - [Sécurité](doc/security.md)
+- [API](doc/api.md)
 - [Décisions](doc/decisions.md)
 
 ## Démonstration SQL avancé

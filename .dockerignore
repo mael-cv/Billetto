@@ -3,3 +3,7 @@ node_modules
 **/dist
 .env
 .git
+doc
+docs
+database/benchmarks/before
+database/benchmarks/after

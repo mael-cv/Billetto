@@ -1,5 +1,6 @@
 FROM node:22-alpine AS deps
-RUN corepack enable
+# OpenSSL requis par le moteur Prisma sur Alpine.
+RUN apk add --no-cache openssl && corepack enable
 WORKDIR /repo
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/
@@ -12,6 +13,7 @@ FROM deps AS api-build
 RUN pnpm --filter @billetto/api prisma:generate && pnpm --filter @billetto/api build
 
 FROM node:22-alpine AS api
+RUN apk add --no-cache openssl
 WORKDIR /repo
 COPY --from=api-build /repo /repo
 USER node

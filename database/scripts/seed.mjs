@@ -21,4 +21,5 @@ psql(['-c', `SELECT 'evenements' AS table, count(*) FROM evenements
              UNION ALL SELECT 'commandes', count(*) FROM commandes
              UNION ALL SELECT 'billets', count(*) FROM billets
              UNION ALL SELECT 'paiements', count(*) FROM paiements`]);
+await import('./seed-demo.mjs');
 console.log(`✓ seed ${mode} en ${((Date.now() - started) / 1000).toFixed(1)} s`);
