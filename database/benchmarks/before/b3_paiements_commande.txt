@@ -1,0 +1,20 @@
+-- B3 — Paiements d'une commande
+-- Index visé : idx_paiements_commande_id
+-- before — 3 mesures (ms) : 82.466 / 121.801 / 197.708 — plan médian ci-dessous
+
+SELECT p.reference, p.type, p.montant, p.statut
+FROM paiements p
+WHERE p.commande_id = 123456;
+
+Gather  (cost=1000.00..16321.22 rows=1 width=34) (actual time=108.285..121.604 rows=2 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=2754 read=7740
+  ->  Parallel Seq Scan on paiements p  (cost=0.00..15321.12 rows=1 width=34) (actual time=71.205..96.398 rows=1 loops=3)
+        Filter: (commande_id = 123456)
+        Rows Removed by Filter: 308935
+        Buffers: shared hit=2754 read=7740
+Planning:
+  Buffers: shared hit=86
+Planning Time: 3.340 ms
+Execution Time: 121.801 ms

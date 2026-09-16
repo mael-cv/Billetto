@@ -1,0 +1,27 @@
+-- B8 — Q6 version sous-requête corrélée COUNT(*) = 0, sur 200 utilisateurs
+-- Sans index : un parcours de commandes (900 000 lignes) par utilisateur.
+-- after — 3 mesures (ms) : 0.893 / 1.069 / 1.197 — plan médian ci-dessous
+
+SELECT count(*)
+FROM utilisateurs u
+WHERE u.id BETWEEN 90001 AND 90200
+  AND (SELECT count(*) FROM commandes c WHERE c.utilisateur_id = u.id) = 0;
+
+Aggregate  (cost=921.09..921.10 rows=1 width=8) (actual time=0.804..0.805 rows=1 loops=1)
+  Buffers: shared hit=607
+  ->  Index Only Scan using pk_utilisateurs on utilisateurs u  (cost=0.29..921.08 rows=1 width=0) (actual time=0.238..0.781 rows=200 loops=1)
+        Index Cond: ((id >= 90001) AND (id <= 90200))
+        Filter: ((SubPlan 1) = 0)
+        Heap Fetches: 0
+        Buffers: shared hit=607
+        SubPlan 1
+          ->  Aggregate  (cost=4.64..4.65 rows=1 width=8) (actual time=0.002..0.002 rows=1 loops=200)
+                Buffers: shared hit=600
+                ->  Index Only Scan using idx_commandes_utilisateur_id on commandes c  (cost=0.42..4.62 rows=11 width=0) (actual time=0.002..0.002 rows=0 loops=200)
+                      Index Cond: (utilisateur_id = u.id)
+                      Heap Fetches: 0
+                      Buffers: shared hit=600
+Planning:
+  Buffers: shared hit=129
+Planning Time: 2.589 ms
+Execution Time: 1.069 ms

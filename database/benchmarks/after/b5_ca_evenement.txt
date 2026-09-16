@@ -1,0 +1,36 @@
+-- B5 — Ventes et CA d'un événement (futur ca_evenement)
+-- Index visé : idx_billets_tarif_id (tarifs.evenement_id est déjà couvert
+-- par l'index unique uq_tarifs_evenement_id_nom, colonne de tête)
+-- after — 3 mesures (ms) : 5.354 / 6.709 / 8.554 — plan médian ci-dessous
+
+SELECT count(*) AS billets, coalesce(sum(b.prix_paye), 0) AS ca
+FROM tarifs t
+JOIN billets b   ON b.tarif_id = t.id
+JOIN commandes c ON c.id = b.commande_id AND c.statut = 'paid'
+WHERE t.evenement_id = 42;
+
+Aggregate  (cost=1872.49..1872.50 rows=1 width=40) (actual time=6.122..6.126 rows=1 loops=1)
+  Buffers: shared hit=2067
+  ->  Nested Loop  (cost=6.29..1870.87 rows=324 width=5) (actual time=0.410..5.978 rows=394 loops=1)
+        Buffers: shared hit=2067
+        ->  Nested Loop  (cost=5.87..1701.34 rows=360 width=13) (actual time=0.353..1.900 rows=456 loops=1)
+              Buffers: shared hit=243
+              ->  Index Scan using uq_tarifs_evenement_id_nom on tarifs t  (cost=0.29..11.84 rows=3 width=8) (actual time=0.118..0.123 rows=3 loops=1)
+                    Index Cond: (evenement_id = 42)
+                    Buffers: shared hit=6
+              ->  Bitmap Heap Scan on billets b  (cost=5.58..561.68 rows=149 width=21) (actual time=0.119..0.511 rows=152 loops=3)
+                    Recheck Cond: (t.id = tarif_id)
+                    Heap Blocks: exact=228
+                    Buffers: shared hit=237
+                    ->  Bitmap Index Scan on idx_billets_tarif_id  (cost=0.00..5.54 rows=149 width=0) (actual time=0.098..0.098 rows=152 loops=3)
+                          Index Cond: (tarif_id = t.id)
+                          Buffers: shared hit=9
+        ->  Index Scan using pk_commandes on commandes c  (cost=0.42..0.47 rows=1 width=8) (actual time=0.008..0.008 rows=1 loops=456)
+              Index Cond: (id = b.commande_id)
+              Filter: (statut = 'paid'::text)
+              Rows Removed by Filter: 0
+              Buffers: shared hit=1824
+Planning:
+  Buffers: shared hit=345
+Planning Time: 7.880 ms
+Execution Time: 6.709 ms

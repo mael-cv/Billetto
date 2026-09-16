@@ -1,0 +1,32 @@
+-- B7 — Q6 version NOT EXISTS : utilisateurs sans commande
+-- Hash Anti Join attendu avant ET après : l'index n'est pas forcément utile
+-- quand on parcourt toute la table.
+-- after — 3 mesures (ms) : 377.375 / 625.926 / 626.094 — plan médian ci-dessous
+
+SELECT count(*)
+FROM utilisateurs u
+WHERE NOT EXISTS (SELECT 1 FROM commandes c WHERE c.utilisateur_id = u.id);
+
+Finalize Aggregate  (cost=20127.82..20127.83 rows=1 width=8) (actual time=591.299..625.255 rows=1 loops=1)
+  Buffers: shared hit=8817
+  ->  Gather  (cost=20127.60..20127.81 rows=2 width=8) (actual time=552.132..625.218 rows=3 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=8817
+        ->  Partial Aggregate  (cost=19127.60..19127.61 rows=1 width=8) (actual time=548.777..548.800 rows=1 loops=3)
+              Buffers: shared hit=8817
+              ->  Parallel Hash Right Anti Join  (cost=2541.80..19108.82 rows=7513 width=0) (actual time=537.798..547.778 rows=3335 loops=3)
+                    Hash Cond: (c.utilisateur_id = u.id)
+                    Buffers: shared hit=8817
+                    ->  Parallel Seq Scan on commandes c  (cost=0.00..12163.00 rows=375000 width=8) (actual time=0.059..122.178 rows=300000 loops=3)
+                          Buffers: shared hit=8413
+                    ->  Parallel Hash  (cost=2020.96..2020.96 rows=41667 width=8) (actual time=48.733..48.734 rows=33333 loops=3)
+                          Buckets: 131072  Batches: 1  Memory Usage: 4992kB
+                          Buffers: shared hit=278
+                          ->  Parallel Index Only Scan using pk_utilisateurs on utilisateurs u  (cost=0.29..2020.96 rows=41667 width=8) (actual time=0.140..15.235 rows=33333 loops=3)
+                                Heap Fetches: 0
+                                Buffers: shared hit=278
+Planning:
+  Buffers: shared hit=230
+Planning Time: 6.483 ms
+Execution Time: 625.926 ms

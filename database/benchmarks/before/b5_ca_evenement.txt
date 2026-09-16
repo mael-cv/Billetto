@@ -1,0 +1,41 @@
+-- B5 — Ventes et CA d'un événement (futur ca_evenement)
+-- Index visé : idx_billets_tarif_id (tarifs.evenement_id est déjà couvert
+-- par l'index unique uq_tarifs_evenement_id_nom, colonne de tête)
+-- before — 3 mesures (ms) : 285.594 / 347.633 / 524.968 — plan médian ci-dessous
+
+SELECT count(*) AS billets, coalesce(sum(b.prix_paye), 0) AS ca
+FROM tarifs t
+JOIN billets b   ON b.tarif_id = t.id
+JOIN commandes c ON c.id = b.commande_id AND c.statut = 'paid'
+WHERE t.evenement_id = 42;
+
+Finalize Aggregate  (cost=31007.72..31007.73 rows=1 width=40) (actual time=336.829..346.819 rows=1 loops=1)
+  Buffers: shared hit=2554 read=19815
+  ->  Gather  (cost=31007.49..31007.70 rows=2 width=40) (actual time=336.241..346.785 rows=3 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=2554 read=19815
+        ->  Partial Aggregate  (cost=30007.49..30007.50 rows=1 width=40) (actual time=316.671..316.676 rows=1 loops=3)
+              Buffers: shared hit=2554 read=19815
+              ->  Nested Loop  (cost=12.30..30006.82 rows=135 width=5) (actual time=5.533..316.372 rows=131 loops=3)
+                    Buffers: shared hit=2554 read=19815
+                    ->  Hash Join  (cost=11.88..29936.18 rows=150 width=13) (actual time=3.381..311.918 rows=152 loops=3)
+                          Hash Cond: (b.tarif_id = t.id)
+                          Buffers: shared hit=728 read=19815
+                          ->  Parallel Seq Scan on billets b  (cost=0.00..27955.00 rows=750000 width=21) (actual time=0.105..160.686 rows=600000 loops=3)
+                                Buffers: shared hit=640 read=19815
+                          ->  Hash  (cost=11.84..11.84 rows=3 width=8) (actual time=0.231..0.232 rows=3 loops=3)
+                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                Buffers: shared hit=20
+                                ->  Index Scan using uq_tarifs_evenement_id_nom on tarifs t  (cost=0.29..11.84 rows=3 width=8) (actual time=0.195..0.198 rows=3 loops=3)
+                                      Index Cond: (evenement_id = 42)
+                                      Buffers: shared hit=20
+                    ->  Index Scan using pk_commandes on commandes c  (cost=0.42..0.47 rows=1 width=8) (actual time=0.025..0.025 rows=1 loops=456)
+                          Index Cond: (id = b.commande_id)
+                          Filter: (statut = 'paid'::text)
+                          Rows Removed by Filter: 0
+                          Buffers: shared hit=1826
+Planning:
+  Buffers: shared hit=308
+Planning Time: 8.436 ms
+Execution Time: 347.633 ms

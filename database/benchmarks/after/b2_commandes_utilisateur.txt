@@ -1,0 +1,27 @@
+-- B2 — Commandes d'un utilisateur, plus récentes d'abord (« Mes commandes »)
+-- Index visé : idx_commandes_utilisateur_id
+-- after — 3 mesures (ms) : 0.508 / 0.863 / 1.12 — plan médian ci-dessous
+
+SELECT c.id, c.statut, c.montant_total, c.created_at
+FROM commandes c
+WHERE c.utilisateur_id = 4242
+ORDER BY c.created_at DESC
+LIMIT 20;
+
+Limit  (cost=47.64..47.67 rows=11 width=26) (actual time=0.611..0.615 rows=12 loops=1)
+  Buffers: shared hit=21
+  ->  Sort  (cost=47.64..47.67 rows=11 width=26) (actual time=0.608..0.610 rows=12 loops=1)
+        Sort Key: created_at DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=21
+        ->  Bitmap Heap Scan on commandes c  (cost=4.51..47.45 rows=11 width=26) (actual time=0.213..0.452 rows=12 loops=1)
+              Recheck Cond: (utilisateur_id = 4242)
+              Heap Blocks: exact=12
+              Buffers: shared hit=18
+              ->  Bitmap Index Scan on idx_commandes_utilisateur_id  (cost=0.00..4.51 rows=11 width=0) (actual time=0.173..0.173 rows=12 loops=1)
+                    Index Cond: (utilisateur_id = 4242)
+                    Buffers: shared hit=6
+Planning:
+  Buffers: shared hit=104
+Planning Time: 3.356 ms
+Execution Time: 0.863 ms

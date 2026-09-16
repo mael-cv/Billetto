@@ -1,0 +1,20 @@
+-- B1 — Billets d'une commande (page « détail commande »)
+-- Index visé : idx_billets_commande_id
+-- before — 3 mesures (ms) : 107.702 / 158.83 / 216.942 — plan médian ci-dessous
+
+SELECT b.id, b.code, b.prix_paye, b.tarif_id
+FROM billets b
+WHERE b.commande_id = 123456;
+
+Gather  (cost=1000.00..30830.20 rows=2 width=37) (actual time=150.011..158.466 rows=2 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=448 read=20007
+  ->  Parallel Seq Scan on billets b  (cost=0.00..29830.00 rows=1 width=37) (actual time=98.499..138.757 rows=1 loops=3)
+        Filter: (commande_id = 123456)
+        Rows Removed by Filter: 599999
+        Buffers: shared hit=448 read=20007
+Planning:
+  Buffers: shared hit=86
+Planning Time: 2.813 ms
+Execution Time: 158.830 ms

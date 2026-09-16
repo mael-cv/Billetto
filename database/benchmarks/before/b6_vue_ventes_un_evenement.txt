@@ -1,0 +1,45 @@
+-- B6 — Vue v_ventes_par_evenement filtrée sur un événement
+-- Le filtre est-il poussé à l'intérieur du CTE de la vue ?
+-- before — 3 mesures (ms) : 272.176 / 351.735 / 368.524 — plan médian ci-dessous
+
+SELECT evenement_id, nom, billets_vendus, ca
+FROM v_ventes_par_evenement
+WHERE evenement_id = 42;
+
+Subquery Scan on v_ventes_par_evenement  (cost=1012.58..31016.06 rows=1 width=53) (actual time=343.228..350.909 rows=1 loops=1)
+  Buffers: shared hit=2941 read=19431
+  ->  Nested Loop Left Join  (cost=1012.58..31016.05 rows=1 width=149) (actual time=343.226..350.904 rows=1 loops=1)
+        Buffers: shared hit=2941 read=19431
+        ->  Index Scan using pk_evenements on evenements e  (cost=0.28..8.30 rows=1 width=27) (actual time=0.121..0.127 rows=1 loops=1)
+              Index Cond: (id = 42)
+              Buffers: shared hit=6
+        ->  Finalize GroupAggregate  (cost=1012.30..31007.73 rows=1 width=48) (actual time=343.095..350.765 rows=1 loops=1)
+              Buffers: shared hit=2935 read=19431
+              ->  Gather  (cost=1012.30..31007.70 rows=2 width=48) (actual time=342.440..350.733 rows=3 loops=1)
+                    Workers Planned: 2
+                    Workers Launched: 2
+                    Buffers: shared hit=2935 read=19431
+                    ->  Partial GroupAggregate  (cost=12.30..30007.50 rows=1 width=48) (actual time=326.395..326.420 rows=1 loops=3)
+                          Buffers: shared hit=2935 read=19431
+                          ->  Nested Loop  (cost=12.30..30006.82 rows=135 width=13) (actual time=4.802..326.105 rows=131 loops=3)
+                                Buffers: shared hit=2935 read=19431
+                                ->  Hash Join  (cost=11.88..29936.18 rows=150 width=21) (actual time=4.509..320.958 rows=152 loops=3)
+                                      Hash Cond: (b.tarif_id = t.id)
+                                      Buffers: shared hit=1109 read=19431
+                                      ->  Parallel Seq Scan on billets b  (cost=0.00..27955.00 rows=750000 width=21) (actual time=0.082..153.476 rows=600000 loops=3)
+                                            Buffers: shared hit=1024 read=19431
+                                      ->  Hash  (cost=11.84..11.84 rows=3 width=16) (actual time=0.188..0.210 rows=3 loops=3)
+                                            Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                            Buffers: shared hit=17
+                                            ->  Index Scan using uq_tarifs_evenement_id_nom on tarifs t  (cost=0.29..11.84 rows=3 width=16) (actual time=0.158..0.162 rows=3 loops=3)
+                                                  Index Cond: (evenement_id = 42)
+                                                  Buffers: shared hit=17
+                                ->  Index Scan using pk_commandes on commandes c  (cost=0.42..0.47 rows=1 width=8) (actual time=0.027..0.027 rows=1 loops=456)
+                                      Index Cond: (id = b.commande_id)
+                                      Filter: (statut = 'paid'::text)
+                                      Rows Removed by Filter: 0
+                                      Buffers: shared hit=1826
+Planning:
+  Buffers: shared hit=457
+Planning Time: 11.570 ms
+Execution Time: 351.735 ms

@@ -1,0 +1,31 @@
+-- B8 — Q6 version sous-requête corrélée COUNT(*) = 0, sur 200 utilisateurs
+-- Sans index : un parcours de commandes (900 000 lignes) par utilisateur.
+-- before — 3 mesures (ms) : 9512.738 / 10054.898 / 11806.283 — plan médian ci-dessous
+
+SELECT count(*)
+FROM utilisateurs u
+WHERE u.id BETWEEN 90001 AND 90200
+  AND (SELECT count(*) FROM commandes c WHERE c.utilisateur_id = u.id) = 0;
+
+Aggregate  (cost=3853964.05..3853964.06 rows=1 width=8) (actual time=10027.316..10027.317 rows=1 loops=1)
+  Buffers: shared hit=1460807 read=221800
+  ->  Index Only Scan using pk_utilisateurs on utilisateurs u  (cost=0.29..3853964.05 rows=1 width=0) (actual time=155.459..10027.017 rows=200 loops=1)
+        Index Cond: ((id >= 90001) AND (id <= 90200))
+        Filter: ((SubPlan 1) = 0)
+        Heap Fetches: 0
+        Buffers: shared hit=1460807 read=221800
+        SubPlan 1
+          ->  Aggregate  (cost=19663.03..19663.04 rows=1 width=8) (actual time=49.584..49.584 rows=1 loops=200)
+                Buffers: shared hit=1460800 read=221800
+                ->  Seq Scan on commandes c  (cost=0.00..19663.00 rows=11 width=0) (actual time=49.572..49.572 rows=0 loops=200)
+                      Filter: (utilisateur_id = u.id)
+                      Rows Removed by Filter: 900000
+                      Buffers: shared hit=1460800 read=221800
+Planning:
+  Buffers: shared hit=117
+Planning Time: 1.521 ms
+JIT:
+  Functions: 9
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 0.711 ms (Deform 0.074 ms), Inlining 66.597 ms, Optimization 18.299 ms, Emission 23.092 ms, Total 108.699 ms
+Execution Time: 10054.898 ms

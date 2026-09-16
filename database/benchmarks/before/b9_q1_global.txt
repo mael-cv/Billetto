@@ -1,0 +1,66 @@
+-- B9 — Q1 global : ventes de tous les événements
+-- Agrégat sur toute la table : un index ne doit PAS aider (témoin).
+-- before — 3 mesures (ms) : 2119.229 / 2251.61 / 2437.267 — plan médian ci-dessous
+
+SELECT evenement_id, billets_vendus, ca
+FROM v_ventes_par_evenement
+ORDER BY ca DESC
+LIMIT 10;
+
+Limit  (cost=69430.01..69430.04 rows=10 width=34) (actual time=2180.179..2248.484 rows=10 loops=1)
+  Buffers: shared hit=10280 read=19804, temp read=12120 written=12204
+  ->  Sort  (cost=69430.01..69442.52 rows=5001 width=34) (actual time=2180.176..2248.478 rows=10 loops=1)
+        Sort Key: v_ventes_par_evenement.ca DESC
+        Sort Method: top-N heapsort  Memory: 26kB
+        Buffers: shared hit=10280 read=19804, temp read=12120 written=12204
+        ->  Subquery Scan on v_ventes_par_evenement  (cost=67645.88..69321.94 rows=5001 width=34) (actual time=2102.551..2242.766 rows=5001 loops=1)
+              Buffers: shared hit=10277 read=19804, temp read=12120 written=12204
+              ->  Merge Left Join  (cost=67645.88..69271.93 rows=5001 width=162) (actual time=2102.549..2240.563 rows=5001 loops=1)
+                    Merge Cond: (e.id = t.evenement_id)
+                    Buffers: shared hit=10277 read=19804, temp read=12120 written=12204
+                    ->  Index Only Scan using pk_evenements on evenements e  (cost=0.28..159.30 rows=5001 width=8) (actual time=0.107..3.341 rows=5001 loops=1)
+                          Heap Fetches: 0
+                          Buffers: shared hit=21
+                    ->  Finalize GroupAggregate  (cost=67645.59..68975.11 rows=5001 width=48) (actual time=2102.359..2227.245 rows=4015 loops=1)
+                          Group Key: t.evenement_id
+                          Buffers: shared hit=10256 read=19804, temp read=12120 written=12204
+                          ->  Gather Merge  (cost=67645.59..68812.58 rows=10002 width=48) (actual time=2101.486..2183.210 rows=12045 loops=1)
+                                Workers Planned: 2
+                                Workers Launched: 2
+                                Buffers: shared hit=10256 read=19804, temp read=12120 written=12204
+                                ->  Sort  (cost=66645.57..66658.07 rows=5001 width=48) (actual time=2087.599..2090.189 rows=4015 loops=3)
+                                      Sort Key: t.evenement_id
+                                      Sort Method: quicksort  Memory: 497kB
+                                      Buffers: shared hit=10256 read=19804, temp read=12120 written=12204
+                                      Worker 0:  Sort Method: quicksort  Memory: 497kB
+                                      Worker 1:  Sort Method: quicksort  Memory: 497kB
+                                      ->  Partial HashAggregate  (cost=66275.80..66338.31 rows=5001 width=48) (actual time=2075.588..2083.465 rows=4015 loops=3)
+                                            Group Key: t.evenement_id
+                                            Batches: 1  Memory Usage: 2001kB
+                                            Buffers: shared hit=10240 read=19804, temp read=12120 written=12204
+                                            Worker 0:  Batches: 1  Memory Usage: 2001kB
+                                            Worker 1:  Batches: 1  Memory Usage: 2001kB
+                                            ->  Hash Join  (cost=19382.90..61197.55 rows=677100 width=13) (actual time=718.206..1637.173 rows=540397 loops=3)
+                                                  Hash Cond: (b.tarif_id = t.id)
+                                                  Buffers: shared hit=10240 read=19804, temp read=12120 written=12204
+                                                  ->  Parallel Hash Join  (cost=18655.38..58692.14 rows=677100 width=13) (actual time=706.932..1273.364 rows=540397 loops=3)
+                                                        Hash Cond: (b.commande_id = c.id)
+                                                        Buffers: shared hit=9064 read=19804, temp read=12120 written=12204
+                                                        ->  Parallel Seq Scan on billets b  (cost=0.00..27955.00 rows=750000 width=21) (actual time=0.116..182.290 rows=600000 loops=3)
+                                                              Buffers: shared hit=1504 read=18951
+                                                        ->  Parallel Hash  (cost=13100.50..13100.50 rows=338550 width=8) (actual time=221.402..221.404 rows=270199 loops=3)
+                                                              Buckets: 262144  Batches: 8  Memory Usage: 6048kB
+                                                              Buffers: shared hit=7560 read=853, temp written=2476
+                                                              ->  Parallel Seq Scan on commandes c  (cost=0.00..13100.50 rows=338550 width=8) (actual time=0.120..105.490 rows=270199 loops=3)
+                                                                    Filter: (statut = 'paid'::text)
+                                                                    Rows Removed by Filter: 29801
+                                                                    Buffers: shared hit=7560 read=853
+                                                  ->  Hash  (cost=540.01..540.01 rows=15001 width=16) (actual time=11.058..11.060 rows=15001 loops=3)
+                                                        Buckets: 16384  Batches: 1  Memory Usage: 832kB
+                                                        Buffers: shared hit=1170
+                                                        ->  Seq Scan on tarifs t  (cost=0.00..540.01 rows=15001 width=16) (actual time=0.797..5.550 rows=15001 loops=3)
+                                                              Buffers: shared hit=1170
+Planning:
+  Buffers: shared hit=375
+Planning Time: 7.527 ms
+Execution Time: 2251.610 ms

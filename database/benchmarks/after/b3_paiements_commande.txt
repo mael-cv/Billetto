@@ -1,0 +1,15 @@
+-- B3 — Paiements d'une commande
+-- Index visé : idx_paiements_commande_id
+-- after — 3 mesures (ms) : 0.293 / 0.299 / 0.478 — plan médian ci-dessous
+
+SELECT p.reference, p.type, p.montant, p.statut
+FROM paiements p
+WHERE p.commande_id = 123456;
+
+Index Scan using idx_paiements_commande_id on paiements p  (cost=0.42..8.44 rows=1 width=34) (actual time=0.132..0.143 rows=2 loops=1)
+  Index Cond: (commande_id = 123456)
+  Buffers: shared hit=8
+Planning:
+  Buffers: shared hit=102
+Planning Time: 2.467 ms
+Execution Time: 0.299 ms

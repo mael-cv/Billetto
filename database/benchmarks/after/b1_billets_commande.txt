@@ -1,0 +1,15 @@
+-- B1 — Billets d'une commande (page « détail commande »)
+-- Index visé : idx_billets_commande_id
+-- after — 3 mesures (ms) : 0.279 / 0.302 / 0.394 — plan médian ci-dessous
+
+SELECT b.id, b.code, b.prix_paye, b.tarif_id
+FROM billets b
+WHERE b.commande_id = 123456;
+
+Index Scan using idx_billets_commande_id on billets b  (cost=0.43..8.46 rows=2 width=37) (actual time=0.097..0.099 rows=2 loops=1)
+  Index Cond: (commande_id = 123456)
+  Buffers: shared hit=7
+Planning:
+  Buffers: shared hit=114
+Planning Time: 2.437 ms
+Execution Time: 0.302 ms

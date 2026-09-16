@@ -1,0 +1,30 @@
+-- B2 — Commandes d'un utilisateur, plus récentes d'abord (« Mes commandes »)
+-- Index visé : idx_commandes_utilisateur_id
+-- before — 3 mesures (ms) : 87.011 / 181.542 / 225.917 — plan médian ci-dessous
+
+SELECT c.id, c.statut, c.montant_total, c.created_at
+FROM commandes c
+WHERE c.utilisateur_id = 4242
+ORDER BY c.created_at DESC
+LIMIT 20;
+
+Limit  (cost=14100.58..14101.75 rows=10 width=26) (actual time=159.196..181.175 rows=12 loops=1)
+  Buffers: shared hit=7267 read=1220
+  ->  Gather Merge  (cost=14100.58..14101.75 rows=10 width=26) (actual time=159.193..181.167 rows=12 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=7267 read=1220
+        ->  Sort  (cost=13100.56..13100.57 rows=5 width=26) (actual time=138.324..138.326 rows=4 loops=3)
+              Sort Key: created_at DESC
+              Sort Method: quicksort  Memory: 25kB
+              Buffers: shared hit=7267 read=1220
+              Worker 0:  Sort Method: quicksort  Memory: 25kB
+              Worker 1:  Sort Method: quicksort  Memory: 25kB
+              ->  Parallel Seq Scan on commandes c  (cost=0.00..13100.50 rows=5 width=26) (actual time=14.045..137.291 rows=4 loops=3)
+                    Filter: (utilisateur_id = 4242)
+                    Rows Removed by Filter: 299996
+                    Buffers: shared hit=7193 read=1220
+Planning:
+  Buffers: shared hit=89
+Planning Time: 3.186 ms
+Execution Time: 181.542 ms

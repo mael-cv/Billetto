@@ -1,0 +1,40 @@
+-- B6 — Vue v_ventes_par_evenement filtrée sur un événement
+-- Le filtre est-il poussé à l'intérieur du CTE de la vue ?
+-- after — 3 mesures (ms) : 4.847 / 9.545 / 10.059 — plan médian ci-dessous
+
+SELECT evenement_id, nom, billets_vendus, ca
+FROM v_ventes_par_evenement
+WHERE evenement_id = 42;
+
+Subquery Scan on v_ventes_par_evenement  (cost=6.57..1880.83 rows=1 width=53) (actual time=8.842..8.853 rows=1 loops=1)
+  Buffers: shared hit=2070
+  ->  Nested Loop Left Join  (cost=6.57..1880.82 rows=1 width=149) (actual time=8.839..8.847 rows=1 loops=1)
+        Buffers: shared hit=2070
+        ->  Index Scan using pk_evenements on evenements e  (cost=0.28..8.30 rows=1 width=27) (actual time=0.149..0.153 rows=1 loops=1)
+              Index Cond: (id = 42)
+              Buffers: shared hit=6
+        ->  GroupAggregate  (cost=6.29..1872.50 rows=1 width=48) (actual time=8.674..8.677 rows=1 loops=1)
+              Buffers: shared hit=2064
+              ->  Nested Loop  (cost=6.29..1870.87 rows=324 width=13) (actual time=0.292..8.425 rows=394 loops=1)
+                    Buffers: shared hit=2064
+                    ->  Nested Loop  (cost=5.87..1701.34 rows=360 width=21) (actual time=0.155..2.487 rows=456 loops=1)
+                          Buffers: shared hit=240
+                          ->  Index Scan using uq_tarifs_evenement_id_nom on tarifs t  (cost=0.29..11.84 rows=3 width=16) (actual time=0.073..0.081 rows=3 loops=1)
+                                Index Cond: (evenement_id = 42)
+                                Buffers: shared hit=3
+                          ->  Bitmap Heap Scan on billets b  (cost=5.58..561.68 rows=149 width=21) (actual time=0.084..0.698 rows=152 loops=3)
+                                Recheck Cond: (tarif_id = t.id)
+                                Heap Blocks: exact=228
+                                Buffers: shared hit=237
+                                ->  Bitmap Index Scan on idx_billets_tarif_id  (cost=0.00..5.54 rows=149 width=0) (actual time=0.060..0.060 rows=152 loops=3)
+                                      Index Cond: (tarif_id = t.id)
+                                      Buffers: shared hit=9
+                    ->  Index Scan using pk_commandes on commandes c  (cost=0.42..0.47 rows=1 width=8) (actual time=0.012..0.012 rows=1 loops=456)
+                          Index Cond: (id = b.commande_id)
+                          Filter: (statut = 'paid'::text)
+                          Rows Removed by Filter: 0
+                          Buffers: shared hit=1824
+Planning:
+  Buffers: shared hit=535
+Planning Time: 15.382 ms
+Execution Time: 9.545 ms

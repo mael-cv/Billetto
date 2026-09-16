@@ -1,0 +1,26 @@
+-- B4 — Prochains événements publiés (page d'accueil)
+-- Index visé : idx_evenements_debut
+-- before — 3 mesures (ms) : 2.082 / 3.051 / 13.729 — plan médian ci-dessous
+
+SELECT e.id, e.nom, e.slug, e.debut
+FROM evenements e
+WHERE e.statut = 'published'
+  AND e.debut >= timestamptz '2026-09-16 12:00:00+02'
+  AND e.debut <  timestamptz '2026-09-16 12:00:00+02' + interval '7 days'
+ORDER BY e.debut
+LIMIT 20;
+
+Limit  (cost=209.29..209.32 rows=14 width=43) (actual time=2.930..2.939 rows=20 loops=1)
+  Buffers: shared hit=112
+  ->  Sort  (cost=209.29..209.32 rows=14 width=43) (actual time=2.927..2.932 rows=20 loops=1)
+        Sort Key: debut
+        Sort Method: top-N heapsort  Memory: 27kB
+        Buffers: shared hit=112
+        ->  Seq Scan on evenements e  (cost=0.00..209.02 rows=14 width=43) (actual time=0.060..2.774 rows=47 loops=1)
+              Filter: ((debut >= '2026-09-16 10:00:00+00'::timestamp with time zone) AND (statut = 'published'::text) AND (debut < ('2026-09-16 10:00:00+00'::timestamp with time zone + '7 days'::interval)))
+              Rows Removed by Filter: 4954
+              Buffers: shared hit=109
+Planning:
+  Buffers: shared hit=115
+Planning Time: 3.969 ms
+Execution Time: 3.051 ms

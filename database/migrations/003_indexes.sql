@@ -18,9 +18,11 @@ CREATE INDEX idx_billets_commande_id ON billets (commande_id);
 CREATE INDEX idx_billets_tarif_id ON billets (tarif_id);
 
 -- B2, B8 : commandes d'un utilisateur.
--- Colonne created_at ajoutée : l'index fournit directement l'ordre de
--- « ORDER BY created_at DESC LIMIT 20 » sans tri (parcours à rebours).
-CREATE INDEX idx_commandes_utilisateur_id ON commandes (utilisateur_id, created_at);
+-- Un index composite (utilisateur_id, created_at) a été essayé pour éviter le
+-- tri de « ORDER BY created_at DESC LIMIT 20 » : le planner ne l'a pas utilisé
+-- pour l'ordre (≈ 10 commandes par utilisateur, Bitmap Scan + tri en mémoire
+-- moins cher). Colonne retirée : pas d'index sans gain mesuré.
+CREATE INDEX idx_commandes_utilisateur_id ON commandes (utilisateur_id);
 
 -- B3 : paiements d'une commande.
 CREATE INDEX idx_paiements_commande_id ON paiements (commande_id);
