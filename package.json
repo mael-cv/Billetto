@@ -8,13 +8,16 @@
     "dev": "pnpm -r --parallel --filter @billetto/web --filter @billetto/api dev",
     "build": "pnpm -r --filter @billetto/web --filter @billetto/api build",
     "lint": "pnpm -r --if-present lint",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present --filter !@billetto/database test",
     "format": "pnpm -r --if-present format",
     "db:migrate": "pnpm --filter @billetto/database migrate",
     "db:reset": "pnpm --filter @billetto/database reset",
     "db:seed:small": "pnpm --filter @billetto/database seed small",
     "db:seed:full": "pnpm --filter @billetto/database seed full",
-    "db:pull": "pnpm --filter @billetto/api prisma:pull"
+    "db:pull": "pnpm --filter @billetto/api prisma:pull",
+    "db:refresh-mv": "pnpm --filter @billetto/database refresh-mv",
+    "db:test": "pnpm --filter @billetto/database test",
+    "db:benchmark": "pnpm --filter @billetto/database benchmark"
   },
   "devDependencies": {
     "@prisma/client": "6.19.3",

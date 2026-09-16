@@ -290,4 +290,12 @@ DROP SCHEMA seed_util CASCADE;
 
 COMMIT;
 
+-- Les vues matérialisées ne suivent pas les données : rafraîchir après le seed.
+DO $$
+BEGIN
+    IF to_regclass('public.mv_ventes_quotidiennes') IS NOT NULL THEN
+        REFRESH MATERIALIZED VIEW mv_ventes_quotidiennes;
+    END IF;
+END $$;
+
 ANALYZE;

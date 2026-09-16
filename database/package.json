@@ -5,6 +5,9 @@
   "scripts": {
     "migrate": "node scripts/migrate.mjs",
     "reset": "node scripts/migrate.mjs --reset",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "refresh-mv": "node scripts/refresh-mv.mjs",
+    "test": "node scripts/test.mjs",
+    "benchmark": "node scripts/benchmark.mjs"
   }
 }
