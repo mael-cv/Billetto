@@ -189,23 +189,29 @@ END $$;
 -- -----------------------------------------------------------------------------
 REFRESH MATERIALIZED VIEW mv_ventes_quotidiennes;
 
+-- Vente datée la veille du début d'un événement (le trigger
+-- trg_billets_validate_date refuse tout billet postérieur au début).
 CREATE TEMP TABLE avant ON COMMIT DROP AS
 SELECT
     (SELECT billets_vendus FROM v_ventes_par_evenement WHERE evenement_id = t.evenement_id) AS vue,
-    coalesce((SELECT billets FROM mv_ventes_quotidiennes WHERE jour = date '2030-01-01'), 0) AS mv,
-    t.id AS tarif_id, t.prix
+    coalesce((SELECT billets FROM mv_ventes_quotidiennes m
+              WHERE m.jour = ((e.debut - interval '1 day') AT TIME ZONE 'Europe/Paris')::date), 0) AS mv,
+    t.id AS tarif_id, t.prix,
+    e.debut - interval '1 day' AS vendu_le,
+    ((e.debut - interval '1 day') AT TIME ZONE 'Europe/Paris')::date AS jour
 FROM tarifs t
+JOIN evenements e ON e.id = t.evenement_id
 ORDER BY t.id
 LIMIT 1;
 
 WITH u AS (SELECT id FROM utilisateurs ORDER BY id DESC LIMIT 1),
      cmd AS (
         INSERT INTO commandes (utilisateur_id, statut, montant_total, created_at)
-        SELECT u.id, 'paid', a.prix * 3, timestamptz '2030-01-01 12:00:00+01'
+        SELECT u.id, 'paid', a.prix * 3, a.vendu_le
         FROM u, avant a
         RETURNING id, utilisateur_id)
 INSERT INTO billets (tarif_id, commande_id, utilisateur_id, prix_paye, created_at)
-SELECT a.tarif_id, cmd.id, cmd.utilisateur_id, a.prix, timestamptz '2030-01-01 12:00:00+01'
+SELECT a.tarif_id, cmd.id, cmd.utilisateur_id, a.prix, a.vendu_le
 FROM cmd, avant a, generate_series(1, 3);
 
 DO $$
@@ -216,7 +222,7 @@ BEGIN
     SELECT billets_vendus INTO vue_apres
     FROM v_ventes_par_evenement v JOIN tarifs t ON t.evenement_id = v.evenement_id
     WHERE t.id = r.tarif_id;
-    SELECT coalesce((SELECT billets FROM mv_ventes_quotidiennes WHERE jour = date '2030-01-01'), 0)
+    SELECT coalesce((SELECT billets FROM mv_ventes_quotidiennes WHERE jour = r.jour), 0)
     INTO mv_apres;
 
     ASSERT vue_apres = r.vue + 3, format('la vue doit voir la vente immédiatement (%s → %s)', r.vue, vue_apres);
@@ -231,7 +237,7 @@ DECLARE
     r record; mv_apres bigint; ecarts bigint;
 BEGIN
     SELECT * INTO r FROM avant;
-    SELECT billets INTO mv_apres FROM mv_ventes_quotidiennes WHERE jour = date '2030-01-01';
+    SELECT billets INTO mv_apres FROM mv_ventes_quotidiennes WHERE jour = r.jour;
     ASSERT mv_apres = r.mv + 3, format('après REFRESH CONCURRENTLY : %s billets attendus, %s', r.mv + 3, mv_apres);
 
     -- La MV rafraîchie correspond exactement au calcul direct

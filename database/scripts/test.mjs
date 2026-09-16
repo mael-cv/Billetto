@@ -1,6 +1,8 @@
 // Exécute les tests SQL (database/tests/*.sql) puis vérifie que chaque
 // requête de database/queries/ s'exécute sans erreur.
+import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { psql } from './psql.mjs';
 
 const list = (dir) =>
@@ -27,6 +29,14 @@ for (const file of list('queries')) {
     console.error(`✗ ${file}`);
     failed++;
   }
+}
+
+console.log('\n» concurrence (sessions parallèles)');
+{
+  const res = spawnSync(process.execPath, [fileURLToPath(new URL('./concurrency.mjs', import.meta.url))], {
+    stdio: 'inherit',
+  });
+  if (res.status !== 0) failed++;
 }
 
 if (failed > 0) {

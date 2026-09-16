@@ -274,6 +274,10 @@ FROM (SELECT tr.id, count(b.id) AS nb
       GROUP BY tr.id) AS v
 WHERE v.id = t.id;
 
+-- Le calcul initial des quotas n'est pas une modification métier : on vide le
+-- journal alimenté par trg_tarifs_audit_update (migration 004).
+TRUNCATE journal_tarifs;
+
 -- Réaligner les séquences IDENTITY après OVERRIDING SYSTEM VALUE.
 DO $$
 DECLARE

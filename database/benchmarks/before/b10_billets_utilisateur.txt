@@ -1,0 +1,45 @@
+-- B10 — Billets d'un utilisateur (« Mes billets », corps de billets_utilisateur())
+-- Index visé : idx_billets_utilisateur_id (ajouté en 004)
+-- before — 3 mesures (ms) : 117.278 / 129.038 / 134.742 — plan médian ci-dessous
+
+SELECT b.id, b.code, e.nom, e.debut, t.nom AS tarif, b.prix_paye, c.statut
+FROM billets b
+JOIN commandes c  ON c.id = b.commande_id
+JOIN tarifs t     ON t.id = b.tarif_id
+JOIN evenements e ON e.id = t.evenement_id
+WHERE b.utilisateur_id = 4242
+ORDER BY e.debut DESC;
+
+Gather Merge  (cost=30980.46..30982.56 rows=18 width=69) (actual time=115.531..128.005 rows=24 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=652 read=20065
+  ->  Sort  (cost=29980.43..29980.45 rows=9 width=69) (actual time=100.163..100.169 rows=8 loops=3)
+        Sort Key: e.debut DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=652 read=20065
+        Worker 0:  Sort Method: quicksort  Memory: 25kB
+        Worker 1:  Sort Method: quicksort  Memory: 25kB
+        ->  Nested Loop  (cost=0.99..29980.29 rows=9 width=69) (actual time=20.564..99.942 rows=8 loops=3)
+              Buffers: shared hit=636 read=20065
+              ->  Nested Loop  (cost=0.71..29977.28 rows=9 width=50) (actual time=20.476..99.764 rows=8 loops=3)
+                    Buffers: shared hit=562 read=20065
+                    ->  Nested Loop  (cost=0.42..29905.98 rows=9 width=42) (actual time=20.363..99.536 rows=8 loops=3)
+                          Buffers: shared hit=488 read=20065
+                          ->  Parallel Seq Scan on billets b  (cost=0.00..29830.00 rows=9 width=45) (actual time=20.190..99.150 rows=8 loops=3)
+                                Filter: (utilisateur_id = 4242)
+                                Rows Removed by Filter: 599992
+                                Buffers: shared hit=390 read=20065
+                          ->  Index Scan using pk_commandes on commandes c  (cost=0.42..8.44 rows=1 width=13) (actual time=0.041..0.041 rows=1 loops=24)
+                                Index Cond: (id = b.commande_id)
+                                Buffers: shared hit=98
+                    ->  Index Scan using pk_tarifs on tarifs t  (cost=0.29..7.92 rows=1 width=24) (actual time=0.024..0.024 rows=1 loops=24)
+                          Index Cond: (id = b.tarif_id)
+                          Buffers: shared hit=74
+              ->  Index Scan using pk_evenements on evenements e  (cost=0.28..0.33 rows=1 width=35) (actual time=0.019..0.019 rows=1 loops=24)
+                    Index Cond: (id = t.evenement_id)
+                    Buffers: shared hit=74
+Planning:
+  Buffers: shared hit=429
+Planning Time: 9.641 ms
+Execution Time: 129.038 ms

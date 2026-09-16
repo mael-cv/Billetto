@@ -4,6 +4,7 @@ Généré par `pnpm db:benchmark compare` — médiane de 3 exécutions, seed FU
 
 | Requête | Avant (ms) | Après (ms) | Gain | Nœuds avant | Nœuds après |
 |---------|-----------:|-----------:|-----:|-------------|-------------|
+| b10_billets_utilisateur | 129.04 | 1.24 | ×104 | Gather Merge, Sort, Nested Loop, Parallel Seq Scan, Index Scan | Sort, Nested Loop, Bitmap Heap Scan, Bitmap Index Scan, Index Scan |
 | b1_billets_commande | 158.83 | 0.30 | ×526 | Gather, Parallel Seq Scan | Index Scan |
 | b2_commandes_utilisateur | 181.54 | 0.86 | ×210 | Limit, Gather Merge, Sort, Parallel Seq Scan | Limit, Sort, Bitmap Heap Scan, Bitmap Index Scan |
 | b3_paiements_commande | 121.80 | 0.30 | ×407 | Gather, Parallel Seq Scan | Index Scan |

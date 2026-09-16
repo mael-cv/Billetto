@@ -8,7 +8,7 @@ PostgreSQL calcule, contrôle et protège ; l'API et le front restent fins.
 - **Base** : PostgreSQL 17, SQL versionné — `database/`
 - **Outils** : Docker Compose, pgAdmin
 
-> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed) et 02 (SQL avancé, vues) livrées.
+> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN) et 04 (fonctions, triggers) livrées.
 
 ## Prérequis
 - Docker Desktop
@@ -53,8 +53,9 @@ Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de 
 | `pnpm db:migrate` | Appliquer les migrations SQL |
 | `pnpm db:reset` | Supprimer le schéma et réappliquer les migrations |
 | `pnpm db:seed:small` / `pnpm db:seed:full` | Charger les données (`SEED=20260916` par défaut) |
-| `pnpm db:test` | Tests SQL (requêtes, vues, MV) |
+| `pnpm db:test` | Tests SQL (requêtes, vues, MV, fonctions, triggers) + test de concurrence d'achat |
 | `pnpm db:refresh-mv` | Rafraîchir la vue matérialisée (`--blocking` pour le mode classique) |
+| `pnpm db:benchmark before\|after\|compare` | Plans `EXPLAIN (ANALYZE, BUFFERS)` avant/après index (seed FULL) |
 | `pnpm db:pull` | Régénérer `prisma/schema.prisma` depuis la base |
 | `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm test` | Développement et qualité |
 
@@ -67,6 +68,7 @@ database/
   migrations/   SQL versionné (source de vérité du schéma)
   queries/      requêtes d'analyse du cours (Q1–Q8)
   tests/        tests SQL
+  benchmarks/   requêtes, plans avant/après, comparatif
   seed/         seed set-based déterministe
   scripts/      migrate / seed / checksum
 prisma/         schema.prisma généré par db pull
@@ -77,6 +79,7 @@ doc/            documentation et phases
 ## Documentation
 - [Phases : objectifs, spécifications, critères d'acceptation](doc/phases/README.md)
 - [Base de données](doc/database.md)
+- [Performance](doc/performance.md)
 - [Décisions](doc/decisions.md)
 
 ## Démonstration SQL avancé

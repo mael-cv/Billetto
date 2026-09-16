@@ -2,6 +2,7 @@
 //   pnpm db:benchmark before   -> plans dans benchmarks/before/
 //   pnpm db:benchmark after    -> plans dans benchmarks/after/
 //   pnpm db:benchmark compare  -> benchmarks/results/summary.md
+//   3e argument optionnel : filtre sur le nom de fichier (ex. before b10)
 //
 // Chaque requête : 1 exécution de chauffe (cache) + 3 mesures ; on garde le
 // plan de la mesure médiane. Les requêtes sont en lecture seule.
@@ -11,6 +12,7 @@ import { psql } from './psql.mjs';
 const root = new URL('../benchmarks/', import.meta.url);
 const RUNS = 3;
 const phase = process.argv[2];
+const only = process.argv[3];
 
 const queries = readdirSync(new URL('queries/', root))
   .filter((f) => f.endsWith('.sql'))
@@ -30,7 +32,7 @@ function nodes(plan) {
 function run(label) {
   const outDir = new URL(`${label}/`, root);
   mkdirSync(outDir, { recursive: true });
-  for (const file of queries) {
+  for (const file of queries.filter((f) => !only || f.includes(only))) {
     const sql = readFileSync(new URL(`queries/${file}`, root), 'utf-8');
     const header = sql.split('\n').filter((l) => l.startsWith('--')).join('\n');
     const body = sql.split('\n').filter((l) => !l.startsWith('--')).join('\n').trim();
