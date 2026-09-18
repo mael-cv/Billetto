@@ -1,10 +1,14 @@
-// Test de concurrence : N sessions PostgreSQL achètent en même temps 1 billet
-// d'un tarif dont le quota est Q (< N).
+// Test de concurrence : N sessions PostgreSQL achètent (ou réservent) en même
+// temps 1 billet d'un tarif dont le quota est Q (< N).
 //
 //   1. acheter_billet()          -> verrou FOR UPDATE : exactement Q ventes.
 //   2. demo_concurrence.acheter_naif() -> contrôle puis insertion SANS verrou :
 //      les sessions lisent toutes « places disponibles » avant que les autres
 //      n'insèrent -> survente (démonstration du problème).
+//   3. creer_reservation()       -> même verrou FOR UPDATE, phase 10 : exactement
+//      Q holds actifs, zéro survente sur les réservations concurrentes.
+//   4. Un hold expiré (p_ttl_override) ne doit plus compter dans le quota :
+//      testé séquentiellement (pas besoin de concurrence), via pg_sleep.
 //
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
@@ -48,11 +52,12 @@ const setup = q(`
              FROM o, l RETURNING id, organisateur_id, lieu_id),
        t AS (INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
              SELECT e.id, v.nom, 20, ${QUOTA}, now() - interval '1 day', now() + interval '29 days'
-             FROM e, (VALUES ('Verrou'), ('Naif')) v(nom) RETURNING id, nom)
+             FROM e, (VALUES ('Verrou'), ('Naif'), ('Hold'), ('Expiry')) v(nom) RETURNING id, nom)
   SELECT (SELECT id FROM u) || ' ' || (SELECT id FROM e) || ' ' || (SELECT id FROM o) || ' ' ||
-         (SELECT id FROM l) || ' ' || (SELECT id FROM t WHERE nom = 'Verrou') || ' ' || (SELECT id FROM t WHERE nom = 'Naif')
+         (SELECT id FROM l) || ' ' || (SELECT id FROM t WHERE nom = 'Verrou') || ' ' || (SELECT id FROM t WHERE nom = 'Naif') || ' ' ||
+         (SELECT id FROM t WHERE nom = 'Hold') || ' ' || (SELECT id FROM t WHERE nom = 'Expiry')
 `);
-const [user, evt, orga, lieu, tVerrou, tNaif] = setup.split(/\s+/).map(Number);
+const [user, evt, orga, lieu, tVerrou, tNaif, tHold, tExpiry] = setup.split(/\s+/).map(Number);
 
 q(`
   CREATE SCHEMA IF NOT EXISTS demo_concurrence;
@@ -89,12 +94,43 @@ try {
     `  version naïve (sans verrou)  : ${naif.ok} succès, ${naif.quota} refus BT006, ${vendusNaif} billets en base`,
   );
 
+  console.log(`» phase 10 : ${N} holds simultanés, quota ${QUOTA}`);
+  const holds = parallel(`SELECT reservation_id FROM creer_reservation(${user}, ${tHold}, 1, 'carte')`);
+  const reservesHold = Number(
+    q(`SELECT count(*) FROM reservations WHERE tarif_id = ${tHold} AND statut = 'active' AND expire_a > now()`),
+  );
+  console.log(
+    `  creer_reservation (FOR UPDATE) : ${holds.ok} succès, ${holds.quota} refus BT006, ${reservesHold} réservations actives en base`,
+  );
+
+  // Un hold expiré ne doit plus bloquer le quota : QUOTA holds à TTL 1s,
+  // on attend l'expiration, puis un nouveau hold sur les mêmes places doit
+  // réussir sans dépendre d'un job de purge (expiration lazy).
+  for (let i = 0; i < QUOTA; i++) {
+    q(`SELECT reservation_id FROM creer_reservation(${user}, ${tExpiry}, 1, 'carte', interval '1 second')`);
+  }
+  q(`SELECT pg_sleep(1.5)`);
+  let expiryFreed = false;
+  let expiryError = '';
+  try {
+    q(`SELECT reservation_id FROM creer_reservation(${user}, ${tExpiry}, ${QUOTA}, 'carte')`);
+    expiryFreed = true;
+  } catch (err) {
+    expiryError = String(err);
+  }
+  console.log(`  hold expiré libère le quota : ${expiryFreed ? 'OK' : `ÉCHEC (${expiryError})`}`);
+
   const checks = [
     [avecVerrou.other.length === 0, `erreurs inattendues : ${avecVerrou.other.join(' | ')}`],
     [avecVerrou.ok === QUOTA, `acheter_billet : ${QUOTA} succès attendus, ${avecVerrou.ok}`],
     [avecVerrou.quota === N - QUOTA, `acheter_billet : ${N - QUOTA} refus attendus, ${avecVerrou.quota}`],
     [vendusVerrou === QUOTA, `acheter_billet : ${QUOTA} billets attendus en base, ${vendusVerrou}`],
     [vendusNaif > QUOTA, `démonstration : la version naïve devait survendre (${vendusNaif} billets)`],
+    [holds.other.length === 0, `creer_reservation : erreurs inattendues : ${holds.other.join(' | ')}`],
+    [holds.ok === QUOTA, `creer_reservation : ${QUOTA} succès attendus, ${holds.ok}`],
+    [holds.quota === N - QUOTA, `creer_reservation : ${N - QUOTA} refus attendus, ${holds.quota}`],
+    [reservesHold === QUOTA, `creer_reservation : ${QUOTA} réservations actives attendues en base, ${reservesHold}`],
+    [expiryFreed, `un hold expiré doit libérer le quota sans dépendre de la purge (${expiryError})`],
   ];
   for (const [ok, msg] of checks) {
     if (!ok) {
@@ -104,14 +140,16 @@ try {
   }
   if (!failed) {
     console.log(`✓ aucune survente avec verrou ; survente reproduite sans verrou (${vendusNaif}/${QUOTA})`);
+    console.log(`✓ aucune survente sur les holds concurrents ; hold expiré libère le quota (expiration lazy)`);
   }
 } finally {
   q(`
     DELETE FROM paiements WHERE commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user});
     DELETE FROM billets WHERE utilisateur_id = ${user};
+    DELETE FROM reservations WHERE utilisateur_id = ${user};
     DELETE FROM commandes WHERE utilisateur_id = ${user};
     DELETE FROM tarifs WHERE evenement_id = ${evt};
-    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif});
+    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry});
     DELETE FROM evenements WHERE id = ${evt};
     DELETE FROM lieux WHERE id = ${lieu};
     DELETE FROM utilisateurs WHERE id = ${user};

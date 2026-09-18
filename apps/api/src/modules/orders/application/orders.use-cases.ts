@@ -4,7 +4,15 @@ import { DbContextService } from '../../../common/database/db-context.service';
 import { notFound } from '../../../common/errors/http-errors';
 import { type Page, toPage } from '../../../common/pagination';
 import type { Pagination } from '../../../common/validation/schemas';
-import { type OrderDetail, ORDERS_REPOSITORY, type OrderSummary, type OrdersRepository } from '../domain/order';
+import {
+  type ConfirmResult,
+  type ModePaiement,
+  type OrderDetail,
+  ORDERS_REPOSITORY,
+  type OrderSummary,
+  type OrdersRepository,
+  type Reservation,
+} from '../domain/order';
 
 @Injectable()
 export class ListMyOrdersUseCase {
@@ -69,5 +77,35 @@ export class RefundOrderUseCase {
       if (!order) throw notFound('Commande');
       return order;
     });
+  }
+}
+
+@Injectable()
+export class HoldOrderUseCase {
+  constructor(
+    private readonly db: DbContextService,
+    @Inject(ORDERS_REPOSITORY) private readonly orders: OrdersRepository,
+  ) {}
+
+  /**
+   * Pose un hold sur le quota (creer_reservation) : mêmes contrôles et même
+   * verrou que l'achat instantané, TTL selon le mode de paiement. Aucune
+   * règle métier ici, tout est dans la fonction SQL.
+   */
+  execute(actor: Actor, tarifId: number, quantite: number, modePaiement: ModePaiement): Promise<Reservation> {
+    return this.db.asBuyer(actor.userId, (tx) => this.orders.hold(tx, actor.userId, tarifId, quantite, modePaiement));
+  }
+}
+
+@Injectable()
+export class ConfirmReservationUseCase {
+  constructor(
+    private readonly db: DbContextService,
+    @Inject(ORDERS_REPOSITORY) private readonly orders: OrdersRepository,
+  ) {}
+
+  /** Transforme un hold actif et non expiré en commande payée (confirmer_reservation). */
+  execute(actor: Actor, reservationId: number): Promise<ConfirmResult> {
+    return this.db.asBuyer(actor.userId, (tx) => this.orders.confirm(tx, actor.userId, reservationId));
   }
 }

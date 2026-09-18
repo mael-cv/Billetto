@@ -28,6 +28,26 @@ export interface OrderDetail extends OrderSummary {
   billets: OrderTicket[];
 }
 
+export type ReservationStatus = 'active' | 'confirmee' | 'expiree' | 'annulee';
+export type ModePaiement = 'carte' | 'virement';
+
+export interface Reservation {
+  id: number;
+  tarifId: number;
+  quantite: number;
+  statut: ReservationStatus;
+  modePaiement: ModePaiement;
+  expireA: Date;
+  montantTotal: string;
+}
+
+export interface ConfirmResult {
+  commandeId: number;
+  paiementId: number;
+  billetIds: number[];
+  montantTotal: string;
+}
+
 export interface OrdersRepository {
   /** Rôle visiteur + app.user_id = userId attendus. */
   listForBuyer(tx: Tx, userId: number, pagination: Pagination): Promise<{ items: OrderSummary[]; total: number }>;
@@ -36,6 +56,10 @@ export interface OrdersRepository {
   findAny(tx: Tx, orderId: number): Promise<OrderDetail | null>;
   refundAsOwner(tx: Tx, orderId: number): Promise<void>;
   refundAsAdmin(tx: Tx, orderId: number): Promise<void>;
+  /** Pose un hold (creer_reservation) : même verrou anti-survente qu'acheter_billet. */
+  hold(tx: Tx, userId: number, tarifId: number, quantite: number, modePaiement: ModePaiement): Promise<Reservation>;
+  /** Transforme un hold actif et non expiré en commande payée (confirmer_reservation). */
+  confirm(tx: Tx, userId: number, reservationId: number): Promise<ConfirmResult>;
 }
 
 export const ORDERS_REPOSITORY = Symbol('ORDERS_REPOSITORY');
