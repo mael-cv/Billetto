@@ -82,7 +82,7 @@ export class Client {
   }
 
   async request(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'OPTIONS',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS',
     url: string,
     payload?: unknown,
     headers: Record<string, string> = {},

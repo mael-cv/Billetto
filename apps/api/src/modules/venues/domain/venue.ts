@@ -12,6 +12,7 @@ export interface Venue {
 
 export interface VenuesRepository {
   list(tx: Tx, ville: string | undefined, pagination: Pagination): Promise<{ items: Venue[]; total: number }>;
+  cities(tx: Tx): Promise<string[]>;
 }
 
 export const VENUES_REPOSITORY = Symbol('VENUES_REPOSITORY');

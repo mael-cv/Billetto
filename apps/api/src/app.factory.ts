@@ -59,7 +59,7 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
   app.enableCors({
     origin: [config.CORS_ORIGIN],
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
     maxAge: 600,
   });

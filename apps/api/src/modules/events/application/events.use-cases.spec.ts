@@ -30,6 +30,7 @@ function setup() {
     create: jest.fn().mockResolvedValue(10),
     update: jest.fn().mockResolvedValue(0),
     delete: jest.fn(),
+    replaceAttributes: jest.fn(),
   };
   return { db, repo, runs };
 }

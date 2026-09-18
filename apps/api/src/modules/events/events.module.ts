@@ -4,6 +4,7 @@ import {
   DeleteEventUseCase,
   GetEventUseCase,
   ListEventsUseCase,
+  ReplaceEventAttributesUseCase,
   UpdateEventUseCase,
 } from './application/events.use-cases';
 import { EVENTS_REPOSITORY } from './domain/events.repository';
@@ -18,6 +19,7 @@ import { EventsController } from './presentation/events.controller';
     CreateEventUseCase,
     UpdateEventUseCase,
     DeleteEventUseCase,
+    ReplaceEventAttributesUseCase,
     { provide: EVENTS_REPOSITORY, useClass: PrismaEventsRepository },
   ],
   exports: [EVENTS_REPOSITORY],

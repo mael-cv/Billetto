@@ -1,23 +1,52 @@
-import { useEffect, useState } from "react";
-import { useStore } from "../lib/store";
-import { Button, Card, Link } from "../components/ui";
-import { IconCalendar, IconCheck, IconDownload, IconTicket } from "../components/icons";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import { useQueryParams } from "../lib/hooks";
+import { formatDate, formatEUR, formatTime } from "../lib/format";
+import { keys } from "../lib/queries";
+import { useRouter } from "../lib/router";
+import { Button, Card, EmptyState, ErrorState, Link, Skeleton } from "../components/ui";
+import { IconCalendar, IconCheck, IconTicket } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 
-interface LastOrder {
-  orderNumber: string;
-  eventNom: string;
-  tickets: { code: string; tarif: string }[];
+/** Fichier iCalendar de l'événement (généré localement, aucune donnée envoyée). */
+function calendarHref(nom: string, debut: string, lieu: string): string {
+  const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const start = new Date(debut);
+  const end = new Date(start.getTime() + 3 * 3_600_000);
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Billetto//FR",
+    "BEGIN:VEVENT",
+    `DTSTART:${stamp(start)}`,
+    `DTEND:${stamp(end)}`,
+    `SUMMARY:${nom.replace(/[,;\n]/g, " ")}`,
+    `LOCATION:${lieu.replace(/[,;\n]/g, " ")}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
 }
 
 export function SuccessPage() {
-  const { toast } = useStore();
-  const [order, setOrder] = useState<LastOrder | null>(null);
+  const params = useQueryParams();
+  const { navigate } = useRouter();
+  const id = Number(params.get("commande"));
+  const order = useQuery({ queryKey: keys.order(id), queryFn: () => api.order(id), enabled: Number.isInteger(id) && id > 0 });
 
-  useEffect(() => {
-    const raw = sessionStorage.getItem("billetto:last-order");
-    if (raw) setOrder(JSON.parse(raw));
-  }, []);
+  if (!Number.isInteger(id) || id <= 0)
+    return (
+      <>
+        <Page>
+          <div className="pt-16">
+            <EmptyState title="Aucune commande" message="Retrouvez vos achats dans « Mes billets »." action={<Button onClick={() => navigate("/tickets")}>Mes billets</Button>} />
+          </div>
+        </Page>
+        <Footer />
+      </>
+    );
+
+  const first = order.data?.billets[0];
 
   return (
     <>
@@ -27,48 +56,43 @@ export function SuccessPage() {
             <IconCheck className="size-8" />
           </div>
           <h1 className="mt-6 font-display text-4xl font-extrabold tracking-tight">Commande confirmée</h1>
-          <p className="mt-2 text-muted-foreground">
-            Vos billets ont été envoyés par e-mail. Retrouvez-les à tout moment dans « Mes billets ».
-          </p>
-          {order && (
-            <div className="mt-2 font-mono text-sm text-muted-foreground">
-              Commande <span className="text-foreground">{order.orderNumber}</span>
-            </div>
-          )}
+          <p className="mt-2 text-muted-foreground">Vos billets sont disponibles à tout moment dans « Mes billets ».</p>
+          <div className="mt-2 font-mono text-sm text-muted-foreground">
+            Commande <span className="text-foreground" data-testid="order-id">n° {id}</span>
+            {order.data && <> · {formatEUR(order.data.montantTotal)}</>}
+          </div>
         </div>
 
         <div className="mx-auto mt-10 max-w-lg space-y-3">
-          {(order?.tickets ?? [{ code: "BLT-XXXX-XXXX", tarif: "Billet" }]).map((t, i) => (
-            <Card key={i} className="flex items-center gap-4 p-4">
+          {order.isLoading && Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-[16px]" />)}
+          {order.isError && <ErrorState onRetry={() => void order.refetch()} />}
+          {order.data?.billets.map((t) => (
+            <Card key={t.id} className="flex items-center gap-4 p-4">
               <span className="flex size-11 items-center justify-center rounded-[10px] bg-primary/15 text-primary">
                 <IconTicket />
               </span>
-              <div className="flex-1">
-                <div className="font-medium">{order?.eventNom ?? "Votre événement"}</div>
-                <div className="text-sm text-muted-foreground">{t.tarif}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{t.evenement}</div>
+                <div className="text-sm text-muted-foreground">
+                  {t.tarif} · {formatDate(t.debut)} · {formatTime(t.debut)}
+                </div>
               </div>
-              <span className="font-mono text-sm text-muted-foreground">{t.code}</span>
+              <span className="hidden font-mono text-xs text-muted-foreground sm:block">{t.code.slice(0, 8).toUpperCase()}</span>
             </Card>
           ))}
         </div>
 
         <div className="mx-auto mt-8 flex max-w-lg flex-col gap-3 sm:flex-row">
-          <Button className="flex-1" onClick={() => toast("Téléchargement des billets…", "success")}>
-            <IconDownload className="size-4" /> Télécharger les billets
-          </Button>
-          <Button variant="outline" className="flex-1" onClick={() => toast("Ajouté au calendrier", "success")}>
-            <IconCalendar className="size-4" /> Ajouter au calendrier
-          </Button>
-        </div>
-        <div className="mx-auto mt-3 flex max-w-lg gap-3">
-          <Button variant="ghost" className="flex-1" onClick={() => toast("Wallet — bientôt disponible", "info")}>
-            Ajouter au Wallet
-          </Button>
           <Link to="/tickets" className="flex-1">
-            <Button variant="secondary" className="w-full">
-              Voir mes billets
-            </Button>
+            <Button className="w-full">Voir mes billets</Button>
           </Link>
+          {first && (
+            <a href={calendarHref(first.evenement, first.debut, `${first.lieu}, ${first.ville}`)} download="billetto.ics" className="flex-1">
+              <Button variant="outline" className="w-full" type="button">
+                <IconCalendar className="size-4" /> Ajouter au calendrier
+              </Button>
+            </a>
+          )}
         </div>
       </Page>
       <Footer />

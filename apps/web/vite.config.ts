@@ -6,7 +6,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 
 // Figma Make injects .figma/make/site.json; fall back to defaults outside Figma Make.
-const siteConfigPath = path.resolve(__dirname, './.figma/make/site.json')
+const siteConfigPath = path.resolve(import.meta.dirname, './.figma/make/site.json')
 const siteConfiguration: FigmaSiteConfiguration = fs.existsSync(siteConfigPath)
   ? JSON.parse(fs.readFileSync(siteConfigPath, 'utf-8'))
   : { title: 'Billetto', language: 'fr' }
@@ -32,22 +32,34 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     server: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
+      proxy: {
+        '/api': {
+          target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
+          changeOrigin: true,
+        },
+      },
       watch: {
         ignored: [
           '**/.figma/**',
-],
+        ],
       },
     },
     preview: {
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
+      proxy: {
+        '/api': {
+          target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
+          changeOrigin: true,
+        },
+      },
     },
   }
 })

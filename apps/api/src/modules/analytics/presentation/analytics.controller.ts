@@ -51,6 +51,16 @@ export class AnalyticsController {
     return this.analytics.dailySales(actor, query.from, query.to);
   }
 
+  /** Journal d'audit des tarifs (trigger trg_tarifs_audit_*). */
+  @Get('price-audit')
+  @Authenticated('admin')
+  priceAudit(
+    @CurrentActor() actor: Actor,
+    @Query(new ZodPipe(recentOrdersQuerySchema)) query: z.infer<typeof recentOrdersQuerySchema>,
+  ) {
+    return this.analytics.priceAudit(actor, query.limit);
+  }
+
   @Get('recent-orders')
   recentOrders(
     @CurrentActor() actor: Actor,

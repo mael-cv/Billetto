@@ -17,4 +17,8 @@ export class ListVenuesUseCase {
     const { items, total } = await this.db.run(toDbActor(actor), (tx) => this.venues.list(tx, ville, pagination));
     return toPage(items, total, pagination);
   }
+
+  cities(actor: Actor | null): Promise<string[]> {
+    return this.db.run(toDbActor(actor), (tx) => this.venues.cities(tx));
+  }
 }

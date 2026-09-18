@@ -236,6 +236,12 @@ describe('API Billetto (e2e)', () => {
       expect(res.json().items.map((e: { id: number }) => e.id)).toContain(fx.eventFutur);
     });
 
+    it('villes distinctes', async () => {
+      const villes = (await anonyme.get('/venues/cities')).json();
+      expect(villes).toEqual(expect.arrayContaining(['Lyon', 'Paris']));
+      expect(new Set(villes).size).toBe(villes.length);
+    });
+
     it('lieux paginés', async () => {
       const res = await anonyme.get('/venues?pageSize=5');
       expect(res.statusCode).toBe(200);
@@ -350,7 +356,25 @@ describe('API Billetto (e2e)', () => {
       expect(res.json()).toMatchObject({ organisateurId: fx.orgaA, statut: 'draft' });
       evenement = res.json().id;
       expect((await anonyme.get(`/events/${evenement}`)).statusCode).toBe(404);
-      expect((await orgaA.get(`/events/${evenement}`)).statusCode).toBe(200);
+      // Catalogue public (défaut) : même l'organisateur ne voit pas son brouillon ; gestion : oui.
+      expect((await orgaA.get(`/events/${evenement}`)).statusCode).toBe(404);
+      expect((await orgaA.get(`/events/${evenement}?scope=manage`)).statusCode).toBe(200);
+    });
+
+    it('scope : catalogue public complet pour un organisateur connecté, gestion limitée à ses événements', async () => {
+      const publicList = (await orgaA.get('/events?pageSize=1')).json();
+      const anonymousList = (await anonyme.get('/events?pageSize=1')).json();
+      expect(publicList.total).toBe(anonymousList.total);
+
+      const manage = (await orgaA.get('/events?pageSize=100&scope=manage')).json();
+      const [{ n }] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM evenements WHERE organisateur_id = ${fx.orgaA}`;
+      expect(manage.total).toBe(Number(n));
+      expect(manage.total).toBeLessThan(publicList.total);
+
+      // Un visiteur qui demande « manage » n'obtient que ses droits de visiteur.
+      expect((await visiteur.get('/events?pageSize=1&scope=manage')).json().total).toBe(anonymousList.total);
+      expect((await anonyme.get('/events?scope=tout')).statusCode).toBe(400);
     });
 
     it('l’organisateur A ne peut pas créer pour B', async () => {
@@ -362,13 +386,13 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('l’organisateur B ne voit ni ne modifie les événements de A (RLS) → 404', async () => {
-      expect((await orgaB.get(`/events/${evenement}`)).statusCode).toBe(404);
+      expect((await orgaB.get(`/events/${evenement}?scope=manage`)).statusCode).toBe(404);
       expect((await orgaB.patch(`/events/${evenement}`, { nom: 'Piraté' })).statusCode).toBe(404);
       expect((await orgaB.delete(`/events/${evenement}`)).statusCode).toBe(404);
       expect((await orgaB.post(`/events/${evenement}/prices`, {
         nom: 'Intrus', prix: 1, quota: 1, dateDebutVente: new Date().toISOString(), dateFinVente: new Date(Date.now() + 86_400_000).toISOString(),
       })).statusCode).toBe(404);
-      const liste = (await orgaB.get('/events?pageSize=100')).json();
+      const liste = (await orgaB.get('/events?pageSize=100&scope=manage')).json();
       expect(liste.items.every((e: { id: number }) => e.id !== evenement)).toBe(true);
     });
 
@@ -397,12 +421,33 @@ describe('API Billetto (e2e)', () => {
       expect((await orgaA.delete(`/prices/${tarif}`)).statusCode).toBe(204);
     });
 
+    it('attributs (EAV) : remplacement, validation par trigger, isolement entre organisateurs', async () => {
+      const ok = await orgaA.request('PUT', `/events/${evenement}/attributes`, [
+        { cle: 'age_minimum', valeur: '18' },
+        { cle: 'parking', valeur: 'oui' },
+      ]);
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json().attributs).toEqual([
+        { cle: 'age_minimum', valeur: '18' },
+        { cle: 'parking', valeur: 'oui' },
+      ]);
+
+      const invalide = await orgaA.request('PUT', `/events/${evenement}/attributes`, [{ cle: 'age_minimum', valeur: 'dix-huit' }]);
+      expect(invalide.statusCode).toBe(422);
+      expect(invalide.json().error).toBe('ATTRIBUT_INVALIDE');
+      // La transaction a été annulée : les attributs précédents sont intacts.
+      expect((await orgaA.get(`/events/${evenement}?scope=manage`)).json().attributs).toHaveLength(2);
+
+      expect((await orgaA.request('PUT', `/events/${evenement}/attributes`, [{ cle: 'Clé Invalide', valeur: 'x' }])).statusCode).toBe(400);
+      expect((await orgaB.request('PUT', `/events/${evenement}/attributes`, [])).statusCode).toBe(404);
+    });
+
     it('publication puis visibilité publique ; suppression', async () => {
       expect((await orgaA.patch(`/events/${evenement}`, { statut: 'published' })).statusCode).toBe(200);
       expect((await anonyme.get(`/events/${evenement}`)).statusCode).toBe(200);
       expect((await orgaA.patch(`/events/${evenement}`, { organisateurId: fx.orgaB })).statusCode).toBe(400);
       expect((await orgaA.delete(`/events/${evenement}`)).statusCode).toBe(204);
-      expect((await orgaA.get(`/events/${evenement}`)).statusCode).toBe(404);
+      expect((await orgaA.get(`/events/${evenement}?scope=manage`)).statusCode).toBe(404);
     });
 
     it('analytics : l’organisateur ne voit que ses événements', async () => {
@@ -428,9 +473,21 @@ describe('API Billetto (e2e)', () => {
       const summary = (await admin.get('/analytics/summary')).json();
       expect(summary.source).toBe('vue_materialisee');
       expect(Number(summary.chiffreAffaires)).toBeGreaterThan(0);
+      expect(summary.commandes).toBeGreaterThan(0);
+      expect(typeof summary.billetsVendus).toBe('number');
       const daily = await admin.get('/analytics/daily-sales?from=2025-01-01&to=2026-01-01');
       expect(daily.statusCode).toBe(200);
       expect(daily.json().length).toBeGreaterThan(0);
+    });
+
+    it('journal d’audit des tarifs : admin uniquement, auteur résolu en e-mail', async () => {
+      const res = await admin.get('/analytics/price-audit?limit=20');
+      expect(res.body).toContain('"auteur"');
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toContainEqual(
+        expect.objectContaining({ action: 'UPDATE', ancienPrix: '30.00', nouveauPrix: '35.50', auteur: 'demo-organisateur@billetto.test' }),
+      );
+      expect((await orgaA.get('/analytics/price-audit')).statusCode).toBe(403);
     });
 
     it('utilisateurs : e-mails visibles de l’admin seulement', async () => {

@@ -238,3 +238,43 @@ export function Tabs({
     </div>
   );
 }
+
+// ---------- Pagination ----------
+export function Pagination({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <nav aria-label="Pagination" className="mt-8 flex items-center justify-center gap-3">
+      <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>
+        ← Précédent
+      </Button>
+      <span className="font-mono text-sm text-muted-foreground" aria-live="polite">
+        Page {page} / {totalPages}
+      </span>
+      <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
+        Suivant →
+      </Button>
+    </nav>
+  );
+}
+
+// ---------- Alert ----------
+export function Alert({ children, tone = "danger" }: { children: ReactNode; tone?: "danger" | "info" | "success" }) {
+  const tones = {
+    danger: "border-danger/30 bg-danger/10 text-danger",
+    info: "border-border bg-elevated text-foreground",
+    success: "border-success/30 bg-success/10 text-success",
+  } as const;
+  return (
+    <div role={tone === "danger" ? "alert" : "status"} className={`rounded-[12px] border px-4 py-3 text-sm ${tones[tone]}`}>
+      {children}
+    </div>
+  );
+}

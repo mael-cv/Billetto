@@ -1,80 +1,110 @@
-// Thin fake API layer. In production these functions call the REST backend
-// (GET /api/v1/events, POST /api/v1/tickets/purchase, ...). Here they resolve
-// against mock data with a small delay so the UI can render real loading/error
-// states. No business rules, pricing, inventory or authorization live here.
+// Appels de l'API REST, un par endpoint (voir doc/api.md).
+import { http } from "./http";
+import type {
+  AdminUser,
+  DailySales,
+  EventDetail,
+  EventSales,
+  EventStatus,
+  EventSummary,
+  EventTypeNode,
+  MyTicket,
+  OrderDetail,
+  OrderSummary,
+  Page,
+  Payment,
+  PriceAuditEntry,
+  PurchaseResult,
+  RecentOrder,
+  Role,
+  SalesSummary,
+  Scope,
+  TicketPrice,
+  User,
+  Venue,
+} from "./types";
 
-import { events, ownedTickets, type BilettoEvent, type OwnedTicket } from "./data";
-
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export type EventSort = "date" | "-date" | "prix" | "nom";
 
 export interface EventFilters {
   q?: string;
   ville?: string;
-  categorie?: string;
+  typeId?: number;
+  from?: string;
+  to?: string;
   prixMax?: number;
-  tri?: "date" | "prix" | "tendance";
+  statut?: EventStatus;
+  sort?: EventSort;
+  page?: number;
+  pageSize?: number;
+  scope?: Scope;
 }
 
-export async function fetchEvents(filters: EventFilters = {}): Promise<BilettoEvent[]> {
-  await delay(650);
-  // Simulate an occasional network error surface for the error-state UI.
-  let out = events.filter((e) => e.statut === "published" || e.statut === "finished");
-
-  if (filters.q) {
-    const q = filters.q.toLowerCase();
-    out = out.filter(
-      (e) => e.nom.toLowerCase().includes(q) || e.lieu.ville.toLowerCase().includes(q) || e.type.toLowerCase().includes(q),
-    );
-  }
-  if (filters.ville && filters.ville !== "Toutes les villes") {
-    out = out.filter((e) => e.lieu.ville === filters.ville);
-  }
-  if (filters.categorie && filters.categorie !== "Tout") {
-    out = out.filter((e) => e.categorie === filters.categorie);
-  }
-  if (typeof filters.prixMax === "number") {
-    out = out.filter((e) => e.aPartirDe <= filters.prixMax!);
-  }
-  if (filters.tri === "prix") out = [...out].sort((a, b) => a.aPartirDe - b.aPartirDe);
-  else if (filters.tri === "tendance") out = [...out].sort((a, b) => Number(!!b.tendance) - Number(!!a.tendance));
-  else out = [...out].sort((a, b) => +new Date(a.date) - +new Date(b.date));
-
-  return out;
+export interface EventInput {
+  nom: string;
+  slug: string;
+  description: string;
+  debut: string;
+  fin: string;
+  lieuId: number;
+  typeEvenementId: number;
+  statut?: "draft" | "published";
 }
 
-export async function fetchEvent(slug: string): Promise<BilettoEvent | null> {
-  await delay(500);
-  return events.find((e) => e.slug === slug) ?? null;
+export interface PriceInput {
+  nom: string;
+  prix: number;
+  quota: number;
+  dateDebutVente: string;
+  dateFinVente: string;
+  actif?: boolean;
 }
 
-export async function fetchMyTickets(): Promise<OwnedTicket[]> {
-  await delay(600);
-  return ownedTickets;
-}
+export const api = {
+  // Authentification
+  me: () => http<{ user: User }>("GET", "/auth/me").then((r) => r.user),
+  login: (email: string, password: string) =>
+    http<{ user: User }>("POST", "/auth/login", { body: { email, password } }).then((r) => r.user),
+  register: (body: { email: string; password: string; prenom: string; nom: string }) =>
+    http<{ user: User }>("POST", "/auth/register", { body }).then((r) => r.user),
+  logout: () => http<void>("POST", "/auth/logout"),
 
-export interface PurchaseRequest {
-  eventSlug: string;
-  items: { tarifId: string; quantite: number }[];
-  buyer: { prenom: string; nom: string; email: string };
-}
+  // Catalogue
+  events: (filters: EventFilters = {}) => http<Page<EventSummary>>("GET", "/events", { query: { ...filters } }),
+  event: (ref: string | number, scope: Scope = "public") =>
+    http<EventDetail>("GET", `/events/${encodeURIComponent(String(ref))}`, { query: { scope } }),
+  eventTypes: () => http<EventTypeNode[]>("GET", "/event-types/tree"),
+  cities: () => http<string[]>("GET", "/venues/cities"),
+  venues: (ville?: string) => http<Page<Venue>>("GET", "/venues", { query: { ville, pageSize: 100 } }),
 
-export interface PurchaseResult {
-  orderNumber: string;
-  tickets: { code: string; tarif: string }[];
-}
+  // Gestion des événements (organisateur / admin)
+  createEvent: (body: EventInput) => http<EventDetail>("POST", "/events", { body }),
+  updateEvent: (id: number, body: Partial<EventInput> & { statut?: EventStatus }) =>
+    http<EventDetail>("PATCH", `/events/${id}`, { body }),
+  deleteEvent: (id: number) => http<void>("DELETE", `/events/${id}`),
+  replaceAttributes: (id: number, attributs: { cle: string; valeur: string }[]) =>
+    http<EventDetail>("PUT", `/events/${id}/attributes`, { body: attributs }),
+  createPrice: (eventId: number, body: PriceInput) => http<TicketPrice>("POST", `/events/${eventId}/prices`, { body }),
 
-// UI-facing call. The backend PostgreSQL function acheter_billet() owns all the
-// real logic (availability, atomicity, payment). This stub only echoes a result
-// so the success screen can render.
-export async function purchaseTickets(req: PurchaseRequest): Promise<PurchaseResult> {
-  await delay(1400);
-  const ev = events.find((e) => e.slug === req.eventSlug);
-  const tickets = req.items.flatMap((it) => {
-    const t = ev?.tarifs.find((x) => x.id === it.tarifId);
-    return Array.from({ length: it.quantite }, () => ({
-      code: "BLT-" + Math.random().toString(36).slice(2, 6).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase(),
-      tarif: t?.nom ?? "Billet",
-    }));
-  });
-  return { orderNumber: "CMD-" + Math.floor(40000 + Math.random() * 9999), tickets };
-}
+  // Achat et commandes
+  purchase: (tarifId: number, quantite: number) =>
+    http<PurchaseResult>("POST", "/tickets/purchase", { body: { tarifId, quantite } }),
+  myTickets: (page = 1, pageSize = 100) => http<Page<MyTicket>>("GET", "/tickets/me", { query: { page, pageSize } }),
+  myOrders: (page = 1, pageSize = 20) => http<Page<OrderSummary>>("GET", "/orders/me", { query: { page, pageSize } }),
+  order: (id: number) => http<OrderDetail>("GET", `/orders/${id}`),
+  orderPayments: (id: number) => http<Payment[]>("GET", `/orders/${id}/payments`),
+  refund: (id: number) => http<OrderDetail>("POST", `/orders/${id}/refund`),
+
+  // Statistiques
+  summary: () => http<SalesSummary>("GET", "/analytics/summary"),
+  eventSales: (sort: "ca" | "billets" | "taux" | "date", page = 1, pageSize = 20) =>
+    http<Page<EventSales>>("GET", "/analytics/events", { query: { sort, page, pageSize } }),
+  dailySales: (from: string, to: string) => http<DailySales[]>("GET", "/analytics/daily-sales", { query: { from, to } }),
+  recentOrders: (limit = 10) => http<RecentOrder[]>("GET", "/analytics/recent-orders", { query: { limit } }),
+  priceAudit: (limit = 50) => http<PriceAuditEntry[]>("GET", "/analytics/price-audit", { query: { limit } }),
+
+  // Administration
+  users: (q?: string, page = 1) => http<Page<AdminUser>>("GET", "/users", { query: { q, page, pageSize: 25 } }),
+  changeRole: (id: number, role: Role, organisateurId: number | null) =>
+    http<AdminUser>("PATCH", `/users/${id}/role`, { body: { role, organisateurId } }),
+};

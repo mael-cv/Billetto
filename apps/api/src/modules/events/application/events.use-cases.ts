@@ -1,12 +1,18 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Actor } from '../../../auth/domain/actor';
 import { toDbActor } from '../../../auth/domain/to-db-actor';
-import { DbContextService } from '../../../common/database/db-context.service';
+import { ANONYMOUS, type DbActor, DbContextService } from '../../../common/database/db-context.service';
 import { ApiError, notFound } from '../../../common/errors/http-errors';
 import { type Page, toPage } from '../../../common/pagination';
 import type { Pagination } from '../../../common/validation/schemas';
 import type { EventDetail, EventFilters, EventInput, EventSummary } from '../domain/event';
 import { EVENTS_REPOSITORY, type EventsRepository } from '../domain/events.repository';
+
+export type CatalogScope = 'public' | 'manage';
+
+/** Catalogue public : toujours les droits d'un visiteur anonyme ; gestion : droits du rôle connecté. */
+export const catalogActor = (actor: Actor | null, scope: CatalogScope): DbActor =>
+  scope === 'manage' ? toDbActor(actor) : ANONYMOUS;
 
 @Injectable()
 export class ListEventsUseCase {
@@ -19,8 +25,15 @@ export class ListEventsUseCase {
    * Même requête pour tous : la RLS restreint le résultat (visiteur : publiés ;
    * organisateur : les siens ; admin : tous).
    */
-  async execute(actor: Actor | null, filters: EventFilters, pagination: Pagination): Promise<Page<EventSummary>> {
-    const { items, total } = await this.db.run(toDbActor(actor), (tx) => this.events.list(tx, filters, pagination));
+  async execute(
+    actor: Actor | null,
+    scope: CatalogScope,
+    filters: EventFilters,
+    pagination: Pagination,
+  ): Promise<Page<EventSummary>> {
+    const { items, total } = await this.db.run(catalogActor(actor, scope), (tx) =>
+      this.events.list(tx, filters, pagination),
+    );
     return toPage(items, total, pagination);
   }
 }
@@ -32,8 +45,8 @@ export class GetEventUseCase {
     @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
   ) {}
 
-  async execute(actor: Actor | null, ref: { id: number } | { slug: string }): Promise<EventDetail> {
-    const event = await this.db.run(toDbActor(actor), (tx) => this.events.findByRef(tx, ref));
+  async execute(actor: Actor | null, scope: CatalogScope, ref: { id: number } | { slug: string }): Promise<EventDetail> {
+    const event = await this.db.run(catalogActor(actor, scope), (tx) => this.events.findByRef(tx, ref));
     // Invisible (RLS) et inexistant sont indistinguables : 404 dans les deux cas.
     if (!event) throw notFound('Événement');
     return event;
@@ -78,6 +91,24 @@ export class UpdateEventUseCase {
     return this.db.run(toDbActor(actor), async (tx) => {
       const count = await this.events.update(tx, id, input);
       if (count === 0) throw notFound('Événement');
+      const updated = await this.events.findByRef(tx, { id });
+      if (!updated) throw notFound('Événement');
+      return updated;
+    });
+  }
+}
+
+@Injectable()
+export class ReplaceEventAttributesUseCase {
+  constructor(
+    private readonly db: DbContextService,
+    @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
+  ) {}
+
+  execute(actor: Actor, id: number, attributes: { cle: string; valeur: string }[]): Promise<EventDetail> {
+    return this.db.run(toDbActor(actor), async (tx) => {
+      if (!(await this.events.findByRef(tx, { id }))) throw notFound('Événement');
+      await this.events.replaceAttributes(tx, id, attributes);
       const updated = await this.events.findByRef(tx, { id });
       if (!updated) throw notFound('Événement');
       return updated;

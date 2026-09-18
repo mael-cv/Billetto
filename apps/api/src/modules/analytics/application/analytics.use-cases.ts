@@ -10,6 +10,7 @@ import {
   type DailySales,
   type EventSales,
   type EventSalesSort,
+  type PriceAuditEntry,
   type RecentOrder,
   type SalesSummary,
   type VenueRanking,
@@ -52,6 +53,10 @@ export class AnalyticsUseCases {
         ? this.analytics.dailySalesFromMaterializedView(tx, from, to)
         : this.analytics.dailySalesFromTables(tx, from, to),
     );
+  }
+
+  priceAudit(actor: Actor, limit: number): Promise<PriceAuditEntry[]> {
+    return this.db.run(toDbActor(actor), (tx) => this.analytics.priceAudit(tx, limit));
   }
 
   recentOrders(actor: Actor, limit: number): Promise<RecentOrder[]> {

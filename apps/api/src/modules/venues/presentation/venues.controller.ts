@@ -14,6 +14,11 @@ const listVenuesQuerySchema = paginationSchema.extend({
 export class VenuesController {
   constructor(private readonly listVenues: ListVenuesUseCase) {}
 
+  @Get('cities')
+  cities(@CurrentActor() actor: Actor | null) {
+    return this.listVenues.cities(actor);
+  }
+
   @Get()
   list(
     @CurrentActor() actor: Actor | null,

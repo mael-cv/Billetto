@@ -4,6 +4,7 @@ import type { Pagination } from '../../../common/validation/schemas';
 export interface SalesSummary {
   evenements: number;
   evenementsAVenir: number;
+  commandes: number;
   billetsVendus: number;
   chiffreAffaires: string;
   tauxRemplissageMoyen: number | null;
@@ -47,6 +48,20 @@ export interface RecentOrder {
   billets: number;
 }
 
+export interface PriceAuditEntry {
+  id: number;
+  tarifId: number;
+  tarif: string | null;
+  evenement: string | null;
+  action: 'UPDATE' | 'DELETE';
+  ancienPrix: string | null;
+  nouveauPrix: string | null;
+  ancienQuota: number | null;
+  nouveauQuota: number | null;
+  auteur: string;
+  createdAt: Date;
+}
+
 export const EVENT_SALES_SORTS = ['ca', 'billets', 'taux', 'date'] as const;
 export type EventSalesSort = (typeof EVENT_SALES_SORTS)[number];
 
@@ -60,6 +75,8 @@ export interface AnalyticsRepository {
   dailySalesFromMaterializedView(tx: Tx, from: Date, to: Date): Promise<DailySales[]>;
   dailySalesFromTables(tx: Tx, from: Date, to: Date): Promise<DailySales[]>;
   recentOrders(tx: Tx, limit: number): Promise<RecentOrder[]>;
+  /** Rôle admin attendu (journal_tarifs). */
+  priceAudit(tx: Tx, limit: number): Promise<PriceAuditEntry[]>;
 }
 
 export const ANALYTICS_REPOSITORY = Symbol('ANALYTICS_REPOSITORY');

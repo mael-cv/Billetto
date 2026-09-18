@@ -1,13 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { homeFor, useAuth } from "../lib/auth";
 import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
+import type { Role } from "../lib/types";
 import { Button, Link } from "./ui";
 import { IconClose, IconMenu, IconSearch, IconTicket, IconUser } from "./icons";
 
-const nav = [
+// Les entrées réservées sont masquées selon le rôle ; l'API les refuse de toute façon.
+const NAV: { to: string; label: string; roles?: Role[] }[] = [
   { to: "/events", label: "Découvrir" },
-  { to: "/organizer", label: "Organisateurs" },
-  { to: "/admin", label: "Admin" },
+  { to: "/organizer", label: "Organisateur", roles: ["organizer", "admin"] },
+  { to: "/admin", label: "Admin", roles: ["admin"] },
 ];
 
 function Logo() {
@@ -23,9 +26,19 @@ function Logo() {
 
 export function Header() {
   const { path, navigate } = useRouter();
-  const { user, cart } = useStore();
+  const { cart, toast } = useStore();
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const cartCount = cart.reduce((n, i) => n + i.quantite, 0);
+  const cartCount = cart?.quantite ?? 0;
+  const nav = NAV.filter((n) => !n.roles || (user && n.roles.includes(user.role)));
+
+  const signOut = () =>
+    logout.mutate(undefined, {
+      onSettled: () => {
+        toast("Vous êtes déconnecté", "info");
+        navigate("/");
+      },
+    });
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-xl">
@@ -57,9 +70,10 @@ export function Header() {
             <IconSearch />
           </button>
           <Link
-            to="/tickets"
+            to={cart ? "/checkout" : "/tickets"}
             className="relative hidden size-10 items-center justify-center rounded-[11px] text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground sm:flex"
           >
+            <span className="sr-only">{cart ? "Panier" : "Mes billets"}</span>
             <IconTicket />
             {cartCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -68,14 +82,21 @@ export function Header() {
             )}
           </Link>
           {user ? (
-            <Link to="/account" className="hidden sm:block">
-              <div className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 transition-colors hover:bg-elevated">
-                <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-primary">
-                  <IconUser className="size-4" />
-                </span>
-                <span className="text-sm font-medium">{user.prenom}</span>
-              </div>
-            </Link>
+            <div className="hidden items-center gap-2 sm:flex">
+              <Link to="/account">
+                <div className="flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 transition-colors hover:bg-elevated">
+                  <span className="flex size-8 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <IconUser className="size-4" />
+                  </span>
+                  <span className="text-sm font-medium" data-testid="user-menu">
+                    {user.prenom}
+                  </span>
+                </div>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={signOut} loading={logout.isPending}>
+                Déconnexion
+              </Button>
+            </div>
           ) : (
             <div className="hidden items-center gap-2 sm:flex">
               <Button variant="ghost" size="sm" onClick={() => navigate("/login")}>
@@ -119,9 +140,14 @@ export function Header() {
           </nav>
           <div className="mt-3 flex gap-2">
             {user ? (
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => { setOpen(false); navigate("/account"); }}>
-                Mon compte
-              </Button>
+              <>
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => { setOpen(false); navigate(homeFor(user.role)); }}>
+                  Mon espace
+                </Button>
+                <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setOpen(false); signOut(); }}>
+                  Déconnexion
+                </Button>
+              </>
             ) : (
               <>
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => { setOpen(false); navigate("/login"); }}>
@@ -141,8 +167,8 @@ export function Header() {
 
 export function Footer() {
   const groups = [
-    { title: "Découvrir", links: [["Tous les événements", "/events"], ["Concerts", "/events"], ["Festivals", "/events"], ["Clubbing", "/events"]] },
-    { title: "Organisateurs", links: [["Dashboard", "/organizer"], ["Créer un événement", "/organizer/events/new"], ["Mes événements", "/organizer/events"], ["Ventes", "/organizer/sales"]] },
+    { title: "Découvrir", links: [["Tous les événements", "/events"], ["Petits prix", "/events?sort=prix"], ["Événements passés", "/events?passes=1"]] },
+    { title: "Organisateurs", links: [["Tableau de bord", "/organizer"], ["Créer un événement", "/organizer/events/new"], ["Mes événements", "/organizer/events"], ["Ventes", "/organizer/sales"]] },
     { title: "Compte", links: [["Connexion", "/login"], ["Créer un compte", "/register"], ["Mes billets", "/tickets"], ["Mon compte", "/account"]] },
   ];
   return (

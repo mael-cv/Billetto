@@ -7,6 +7,11 @@ import type { Venue, VenuesRepository } from '../domain/venue';
 
 @Injectable()
 export class PrismaVenuesRepository implements VenuesRepository {
+  async cities(tx: Tx): Promise<string[]> {
+    const rows = await tx.$queryRaw<{ ville: string }[]>`SELECT DISTINCT ville FROM lieux ORDER BY ville`;
+    return rows.map((r) => r.ville);
+  }
+
   async list(tx: Tx, ville: string | undefined, pagination: Pagination) {
     const where = ville ? { ville } : {};
     const [rows, total] = await Promise.all([

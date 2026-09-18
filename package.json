@@ -19,7 +19,8 @@
     "db:test": "pnpm --filter @billetto/database test",
     "db:benchmark": "pnpm --filter @billetto/database benchmark",
     "db:seed:demo": "pnpm --filter @billetto/database seed:demo",
-    "test:e2e": "pnpm --filter @billetto/api test:e2e"
+    "test:e2e": "pnpm --filter @billetto/api test:e2e",
+    "test:e2e:web": "pnpm --filter @billetto/web test:e2e"
   },
   "devDependencies": {
     "@prisma/client": "6.19.3",

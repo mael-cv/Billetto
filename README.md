@@ -8,7 +8,7 @@ PostgreSQL calcule, contrôle et protège ; l'API et le front restent fins.
 - **Base** : PostgreSQL 17, SQL versionné — `database/`
 - **Outils** : Docker Compose, pgAdmin
 
-> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers), 05 (rôles, GRANT, RLS) et 06 (API NestJS) livrées.
+> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers), 05 (rôles, GRANT, RLS), 06 (API NestJS) et 07 (Front React et intégration complète) livrées.
 
 ## Prérequis
 - Docker Desktop
@@ -57,9 +57,11 @@ Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de 
 | `pnpm db:refresh-mv` | Rafraîchir la vue matérialisée (`--blocking` pour le mode classique) |
 | `pnpm db:benchmark before\|after\|compare` | Plans `EXPLAIN (ANALYZE, BUFFERS)` avant/après index (seed FULL) |
 | `pnpm db:seed:demo` | (Re)créer les comptes de démonstration |
+| `pnpm test` | Tests unitaires et d'intégration de tous les packages (API + Web) |
 | `pnpm test:e2e` | Tests de bout en bout de l'API sur la base |
+| `pnpm test:e2e:web` | Tests de bout en bout du front Playwright (visiteur, achat, orga, admin, sécurité) |
 | `pnpm db:pull` | Régénérer `prisma/schema.prisma` depuis la base |
-| `pnpm dev` / `pnpm build` / `pnpm lint` / `pnpm test` | Développement et qualité |
+| `pnpm dev` / `pnpm build` / `pnpm lint` | Développement, build de production et qualité |
 
 ## Comptes de démonstration
 

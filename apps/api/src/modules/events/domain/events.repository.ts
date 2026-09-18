@@ -13,6 +13,8 @@ export interface EventsRepository {
   /** Nombre de lignes modifiées (0 si l'événement est invisible pour l'appelant). */
   update(tx: Tx, id: number, input: Partial<EventInput>): Promise<number>;
   delete(tx: Tx, id: number): Promise<number>;
+  /** Remplace les attributs (EAV) ; valeurs validées par trg_evenement_attributs_validate (BT020). */
+  replaceAttributes(tx: Tx, id: number, attributes: { cle: string; valeur: string }[]): Promise<void>;
 }
 
 export const EVENTS_REPOSITORY = Symbol('EVENTS_REPOSITORY');

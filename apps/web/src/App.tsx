@@ -1,3 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "./lib/http";
+import { RequireAuth } from "./lib/auth";
 import { matchRoute, RouterProvider, useRouter } from "./lib/router";
 import { StoreProvider } from "./lib/store";
 import { Header, Page, Toaster } from "./components/Layout";
@@ -14,6 +17,17 @@ import { OrganizerDashboardPage } from "./pages/OrganizerDashboard";
 import { OrganizerEventsPage, OrganizerSalesPage } from "./pages/OrganizerEvents";
 import { CreateEventPage } from "./pages/CreateEvent";
 import { AdminPage } from "./pages/Admin";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      // Pas de nouvelle tentative sur une erreur métier (4xx) : seules les erreurs réseau / 5xx sont rejouées.
+      retry: (failureCount, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && failureCount < 2,
+    },
+  },
+});
 
 function NotFound() {
   const { navigate } = useRouter();
@@ -48,16 +62,62 @@ function Routes() {
   const eventMatch = matchRoute(clean, "/events/:slug");
   if (eventMatch) return <EventDetailPage slug={eventMatch.slug} />;
 
-  if (clean === "/checkout") return <CheckoutPage />;
-  if (clean === "/checkout/success") return <SuccessPage />;
-  if (clean === "/tickets") return <TicketsPage />;
-  if (clean === "/account") return <AccountPage />;
+  if (clean === "/checkout")
+    return (
+      <RequireAuth>
+        <CheckoutPage />
+      </RequireAuth>
+    );
+  if (clean === "/checkout/success")
+    return (
+      <RequireAuth>
+        <SuccessPage />
+      </RequireAuth>
+    );
+  if (clean === "/tickets")
+    return (
+      <RequireAuth>
+        <TicketsPage />
+      </RequireAuth>
+    );
+  if (clean === "/account")
+    return (
+      <RequireAuth>
+        <AccountPage />
+      </RequireAuth>
+    );
 
-  if (clean === "/organizer") return <OrganizerDashboardPage />;
-  if (clean === "/organizer/events") return <OrganizerEventsPage />;
-  if (clean === "/organizer/events/new") return <CreateEventPage />;
-  if (clean === "/organizer/sales") return <OrganizerSalesPage />;
-  if (clean === "/admin") return <AdminPage />;
+  const manage = ["organizer", "admin"] as const;
+  if (clean === "/organizer")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <OrganizerDashboardPage />
+      </RequireAuth>
+    );
+  if (clean === "/organizer/events")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <OrganizerEventsPage />
+      </RequireAuth>
+    );
+  if (clean === "/organizer/events/new")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <CreateEventPage />
+      </RequireAuth>
+    );
+  if (clean === "/organizer/sales")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <OrganizerSalesPage />
+      </RequireAuth>
+    );
+  if (clean === "/admin")
+    return (
+      <RequireAuth roles={["admin"]}>
+        <AdminPage />
+      </RequireAuth>
+    );
 
   return <NotFound />;
 }
@@ -80,10 +140,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <RouterProvider>
-      <StoreProvider>
-        <Shell />
-      </StoreProvider>
-    </RouterProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider>
+        <StoreProvider>
+          <Shell />
+        </StoreProvider>
+      </RouterProvider>
+    </QueryClientProvider>
   );
 }

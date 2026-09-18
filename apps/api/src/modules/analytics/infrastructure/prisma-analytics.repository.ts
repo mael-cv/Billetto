@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Tx } from '../../../common/database/db-context.service';
 import { offsetOf } from '../../../common/pagination';
-import { toMoney, toNumber } from '../../../common/serialization';
+import { toMoney, toNullableMoney, toNumber } from '../../../common/serialization';
 import type { Pagination } from '../../../common/validation/schemas';
 import type {
   AnalyticsRepository,
   DailySales,
   EventSales,
   EventSalesSort,
+  PriceAuditEntry,
   RecentOrder,
   SalesSummary,
   VenueRanking,
@@ -39,11 +40,19 @@ const toDaily = (r: DailyRow): DailySales => ({
 export class PrismaAnalyticsRepository implements AnalyticsRepository {
   async summaryFromViews(tx: Tx): Promise<SalesSummary> {
     const rows = await tx.$queryRaw<
-      { evenements: bigint; a_venir: bigint; billets: bigint | null; ca: Prisma.Decimal | null; taux: number | null }[]
+      {
+        evenements: bigint;
+        a_venir: bigint;
+        commandes: bigint;
+        billets: bigint | null;
+        ca: Prisma.Decimal | null;
+        taux: number | null;
+      }[]
     >`
       SELECT count(*) AS evenements,
+             (SELECT count(*) FROM commandes c WHERE c.statut = 'paid') AS commandes,
              count(*) FILTER (WHERE r.debut > now() AND r.statut = 'published') AS a_venir,
-             sum(r.billets_vendus) AS billets,
+             sum(r.billets_vendus)::bigint AS billets,
              (SELECT sum(v.ca) FROM v_ventes_par_evenement v) AS ca,
              avg(r.taux_remplissage)::float8 AS taux
       FROM v_remplissage r`;
@@ -51,6 +60,7 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
     return {
       evenements: toNumber(row?.evenements),
       evenementsAVenir: toNumber(row?.a_venir),
+      commandes: toNumber(row?.commandes),
       billetsVendus: toNumber(row?.billets ?? 0n),
       chiffreAffaires: toMoney(row?.ca),
       tauxRemplissageMoyen: row?.taux ?? null,
@@ -59,16 +69,20 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
   }
 
   async summaryFromMaterializedView(tx: Tx): Promise<SalesSummary> {
-    const rows = await tx.$queryRaw<{ evenements: bigint; a_venir: bigint; billets: bigint | null; ca: Prisma.Decimal | null }[]>`
+    const rows = await tx.$queryRaw<
+      { evenements: bigint; a_venir: bigint; commandes: bigint | null; billets: bigint | null; ca: Prisma.Decimal | null }[]
+    >`
       SELECT (SELECT count(*) FROM evenements) AS evenements,
+             sum(commandes)::bigint AS commandes,
              (SELECT count(*) FROM evenements WHERE debut > now() AND statut = 'published') AS a_venir,
-             sum(billets) AS billets,
+             sum(billets)::bigint AS billets,
              sum(ca) AS ca
       FROM mv_ventes_quotidiennes`;
     const row = rows[0];
     return {
       evenements: toNumber(row?.evenements),
       evenementsAVenir: toNumber(row?.a_venir),
+      commandes: toNumber(row?.commandes ?? 0n),
       billetsVendus: toNumber(row?.billets ?? 0n),
       chiffreAffaires: toMoney(row?.ca),
       tauxRemplissageMoyen: null,
@@ -171,6 +185,49 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
       GROUP BY 1
       ORDER BY 1`;
     return rows.map(toDaily);
+  }
+
+  async priceAudit(tx: Tx, limit: number): Promise<PriceAuditEntry[]> {
+    // auteur = app.user_id (identifiant) ou rôle de connexion : jointure pour afficher l'e-mail.
+    const rows = await tx.$queryRaw<
+      {
+        id: bigint;
+        tarif_id: bigint;
+        tarif: string | null;
+        evenement: string | null;
+        action: 'UPDATE' | 'DELETE';
+        ancien_prix: Prisma.Decimal | null;
+        nouveau_prix: Prisma.Decimal | null;
+        ancien_quota: number | null;
+        nouveau_quota: number | null;
+        auteur: string;
+        created_at: Date;
+      }[]
+    >`
+      SELECT j.id, j.tarif_id, t.nom AS tarif, e.nom AS evenement, j.action,
+             j.ancien_prix, j.nouveau_prix, j.ancien_quota, j.nouveau_quota,
+             coalesce(u.email, j.auteur) AS auteur, j.created_at
+      FROM journal_tarifs j
+      LEFT JOIN tarifs t       ON t.id = j.tarif_id
+      LEFT JOIN evenements e   ON e.id = t.evenement_id
+      -- Comparaison en texte : SQL ne garantit pas l'ordre d'évaluation d'un AND,
+      -- un cast j.auteur::bigint échouerait sur un auteur « billetto_owner » (22P02).
+      LEFT JOIN utilisateurs u ON u.id::text = j.auteur
+      ORDER BY j.created_at DESC, j.id DESC
+      LIMIT ${limit}`;
+    return rows.map((r) => ({
+      id: toNumber(r.id),
+      tarifId: toNumber(r.tarif_id),
+      tarif: r.tarif,
+      evenement: r.evenement,
+      action: r.action,
+      ancienPrix: toNullableMoney(r.ancien_prix),
+      nouveauPrix: toNullableMoney(r.nouveau_prix),
+      ancienQuota: r.ancien_quota,
+      nouveauQuota: r.nouveau_quota,
+      auteur: r.auteur,
+      createdAt: r.created_at,
+    }));
   }
 
   async recentOrders(tx: Tx, limit: number): Promise<RecentOrder[]> {

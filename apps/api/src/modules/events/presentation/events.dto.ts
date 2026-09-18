@@ -4,6 +4,24 @@ import { EVENT_SORTS } from '../domain/event';
 
 const statut = z.enum(['draft', 'published', 'cancelled', 'finished']);
 
+/**
+ * public : catalogue tel que le voit un visiteur anonyme (publiés / terminés), même connecté.
+ * manage : droits du rôle connecté (organisateur : ses événements, y compris brouillons ; admin : tous).
+ */
+export const scopeSchema = z.enum(['public', 'manage']).default('public');
+export const scopeQuerySchema = z.object({ scope: scopeSchema });
+export type Scope = z.infer<typeof scopeSchema>;
+
+export const attributesSchema = z
+  .array(
+    z.strictObject({
+      cle: z.string().trim().regex(/^[a-z][a-z0-9_]{0,49}$/, 'clé en minuscules (a-z, 0-9, _)'),
+      valeur: z.string().trim().min(1).max(200),
+    }),
+  )
+  .max(20)
+  .refine((a) => new Set(a.map((x) => x.cle)).size === a.length, 'clés en double');
+
 export const listEventsQuerySchema = paginationSchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
   ville: z.string().trim().min(1).max(100).optional(),
@@ -13,6 +31,7 @@ export const listEventsQuerySchema = paginationSchema.extend({
   prixMax: z.coerce.number().min(0).max(100_000).optional(),
   statut: statut.optional(),
   sort: z.enum(EVENT_SORTS).default('date'),
+  scope: scopeSchema,
 });
 
 /** Un identifiant numérique OU un slug (les slugs purement numériques sont refusés à la création). */

@@ -1,10 +1,12 @@
-import { type BilettoEvent, formatDateShort, formatEUR } from "../lib/data";
+import { formatDateShort, formatEUR } from "../lib/format";
+import { eventImage } from "../lib/presentation";
+import type { EventSummary } from "../lib/types";
 import { Link } from "./ui";
 import { IconPin } from "./icons";
 
-export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: number }) {
-  const d = formatDateShort(event.date);
-  const isPast = event.statut === "finished";
+export function EventCard({ event }: { event: EventSummary }) {
+  const d = formatDateShort(event.debut);
+  const isPast = event.statut === "finished" || new Date(event.fin) < new Date();
   return (
     <Link
       to={`/events/${event.slug}`}
@@ -12,8 +14,8 @@ export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: n
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-elevated">
         <img
-          src={event.image}
-          alt={event.nom}
+          src={eventImage(event, 800, 600)}
+          alt=""
           loading="lazy"
           className={`size-full object-cover transition-transform duration-500 group-hover:scale-[1.04] ${isPast ? "opacity-60 grayscale" : ""}`}
         />
@@ -22,11 +24,6 @@ export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: n
           <span className="font-display text-lg font-bold leading-none">{d.jour}</span>
           <span className="font-mono text-[10px] font-medium tracking-widest text-muted-foreground">{d.mois}</span>
         </div>
-        {event.tendance && !isPast && (
-          <span className="absolute right-3 top-3 rounded-full bg-primary px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-            Tendance
-          </span>
-        )}
         {isPast && (
           <span className="absolute right-3 top-3 rounded-full bg-background/90 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
             Terminé
@@ -34,7 +31,7 @@ export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: n
         )}
         <div className="absolute bottom-3 left-3">
           <span className="rounded-full bg-background/80 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-foreground backdrop-blur">
-            {event.categorie}
+            {event.type.nom}
           </span>
         </div>
       </div>
@@ -50,7 +47,7 @@ export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: n
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
           <span className="text-xs text-muted-foreground">À partir de</span>
-          <span className="font-display text-base font-bold">{formatEUR(event.aPartirDe)}</span>
+          <span className="font-display text-base font-bold">{event.prixMin ? formatEUR(event.prixMin) : "—"}</span>
         </div>
       </div>
     </Link>
@@ -59,7 +56,7 @@ export function EventCard({ event, index = 0 }: { event: BilettoEvent; index?: n
 
 export function EventCardSkeleton() {
   return (
-    <div className="overflow-hidden rounded-[16px] border border-border bg-card">
+    <div className="overflow-hidden rounded-[16px] border border-border bg-card" aria-hidden>
       <div className="skeleton aspect-[4/3]" />
       <div className="space-y-3 p-4">
         <div className="skeleton h-4 w-4/5 rounded" />

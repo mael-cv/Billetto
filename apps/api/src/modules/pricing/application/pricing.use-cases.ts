@@ -4,6 +4,7 @@ import { toDbActor } from '../../../auth/domain/to-db-actor';
 import { DbContextService } from '../../../common/database/db-context.service';
 import { notFound } from '../../../common/errors/http-errors';
 import type { PriceInput, TicketPrice } from '../domain/price';
+import { type CatalogScope, catalogActor } from '../../events/application/events.use-cases';
 import { PRICING_REPOSITORY, type PricingRepository } from '../domain/pricing.repository';
 
 @Injectable()
@@ -13,8 +14,8 @@ export class ListPricesUseCase {
     @Inject(PRICING_REPOSITORY) private readonly prices: PricingRepository,
   ) {}
 
-  execute(actor: Actor | null, eventId: number): Promise<TicketPrice[]> {
-    return this.db.run(toDbActor(actor), async (tx) => {
+  execute(actor: Actor | null, scope: CatalogScope, eventId: number): Promise<TicketPrice[]> {
+    return this.db.run(catalogActor(actor, scope), async (tx) => {
       if (!(await this.prices.eventVisible(tx, eventId))) throw notFound('Événement');
       return this.prices.listForEvent(tx, eventId);
     });

@@ -1,16 +1,21 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
-// Front-end only cart selection + toast + session mock. Persists the checkout
-// selection between the event page and checkout. No pricing/inventory logic.
+// État purement d'interface : sélection de billets entre la page événement et le paiement,
+// et notifications. Le prix affiché est indicatif : le montant débité est calculé par l'API.
 
-export interface CartItem {
+/** Une commande porte sur un seul tarif (acheter_billet). */
+export interface CartSelection {
+  eventId: number;
   eventSlug: string;
   eventNom: string;
+  eventDebut: string;
   eventImage: string;
-  tarifId: string;
+  lieu: string;
+  tarifId: number;
   tarifNom: string;
-  prix: number;
+  prix: string;
   quantite: number;
+  restantes: number;
 }
 
 export interface Toast {
@@ -20,48 +25,49 @@ export interface Toast {
 }
 
 interface StoreCtx {
-  cart: CartItem[];
-  setSelection: (items: CartItem[]) => void;
-  clearCart: () => void;
-  user: { prenom: string; email: string } | null;
-  signIn: (prenom: string, email: string) => void;
-  signOut: () => void;
+  cart: CartSelection | null;
+  setCart: (selection: CartSelection | null) => void;
   toasts: Toast[];
   toast: (message: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: number) => void;
 }
 
+const CART_KEY = "billetto:panier";
 const Ctx = createContext<StoreCtx | null>(null);
 
+function loadCart(): CartSelection | null {
+  try {
+    const raw = sessionStorage.getItem(CART_KEY);
+    return raw ? (JSON.parse(raw) as CartSelection) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [user, setUser] = useState<{ prenom: string; email: string } | null>(null);
+  // Conservé en sessionStorage : la sélection survit à la redirection vers la connexion.
+  const [cart, setCartState] = useState<CartSelection | null>(loadCart);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    try {
+      if (cart) sessionStorage.setItem(CART_KEY, JSON.stringify(cart));
+      else sessionStorage.removeItem(CART_KEY);
+    } catch {
+      // stockage indisponible (navigation privée) : sélection en mémoire uniquement
+    }
+  }, [cart]);
 
   const toast = useCallback((message: string, tone: Toast["tone"] = "info") => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, message, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3800);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
   return (
-    <Ctx.Provider
-      value={{
-        cart,
-        setSelection: setCart,
-        clearCart: () => setCart([]),
-        user,
-        signIn: (prenom, email) => setUser({ prenom, email }),
-        signOut: () => setUser(null),
-        toasts,
-        toast,
-        dismissToast,
-      }}
-    >
-      {children}
-    </Ctx.Provider>
+    <Ctx.Provider value={{ cart, setCart: setCartState, toasts, toast, dismissToast }}>{children}</Ctx.Provider>
   );
 }
 

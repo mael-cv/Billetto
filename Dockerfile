@@ -25,4 +25,6 @@ FROM deps AS web-build
 RUN pnpm --filter @billetto/web build
 
 FROM nginx:1.27-alpine AS web
+COPY infra/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-build /repo/apps/web/dist /usr/share/nginx/html
+

@@ -193,6 +193,15 @@ export class PrismaEventsRepository implements EventsRepository {
     return result.count;
   }
 
+  async replaceAttributes(tx: Tx, id: number, attributes: { cle: string; valeur: string }[]): Promise<void> {
+    await tx.evenement_attributs.deleteMany({ where: { evenement_id: BigInt(id) } });
+    if (attributes.length > 0) {
+      await tx.evenement_attributs.createMany({
+        data: attributes.map((a) => ({ evenement_id: BigInt(id), cle: a.cle, valeur: a.valeur })),
+      });
+    }
+  }
+
   async delete(tx: Tx, id: number): Promise<number> {
     const result = await tx.evenements.deleteMany({ where: { id: BigInt(id) } });
     return result.count;
