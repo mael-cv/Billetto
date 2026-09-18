@@ -9,6 +9,7 @@ import { HomePage } from "./pages/Home";
 import { EventsPage } from "./pages/Events";
 import { EventDetailPage } from "./pages/EventDetail";
 import { CheckoutPage } from "./pages/Checkout";
+import { AwaitingTransferPage } from "./pages/AwaitingTransfer";
 import { SuccessPage } from "./pages/Success";
 import { TicketsPage } from "./pages/Tickets";
 import { AuthPage } from "./pages/Auth";
@@ -72,6 +73,12 @@ function Routes() {
     return (
       <RequireAuth>
         <SuccessPage />
+      </RequireAuth>
+    );
+  if (clean === "/checkout/awaiting-transfer")
+    return (
+      <RequireAuth>
+        <AwaitingTransferPage />
       </RequireAuth>
     );
   if (clean === "/tickets")

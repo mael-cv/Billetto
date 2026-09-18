@@ -4,7 +4,16 @@ import type { Tx } from '../../../common/database/db-context.service';
 import { offsetOf } from '../../../common/pagination';
 import { toMoney, toNumber } from '../../../common/serialization';
 import type { Pagination } from '../../../common/validation/schemas';
-import type { OrderDetail, OrderStatus, OrderSummary, OrderTicket, OrdersRepository } from '../domain/order';
+import type {
+  ConfirmResult,
+  ModePaiement,
+  OrderDetail,
+  OrderStatus,
+  OrderSummary,
+  OrderTicket,
+  OrdersRepository,
+  Reservation,
+} from '../domain/order';
 
 interface OrderRow {
   id: bigint;
@@ -25,6 +34,19 @@ interface TicketRow {
   ville: string;
   tarif: string;
   prix_paye: Prisma.Decimal;
+}
+
+interface HoldRow {
+  reservation_id: bigint;
+  expire_a: Date;
+  montant_total: Prisma.Decimal;
+}
+
+interface ConfirmRow {
+  commande_id: bigint;
+  paiement_id: bigint;
+  billet_ids: bigint[];
+  montant_total: Prisma.Decimal;
 }
 
 const toSummary = (r: OrderRow): OrderSummary => ({
@@ -99,6 +121,37 @@ export class PrismaOrdersRepository implements OrdersRepository {
 
   async refundAsAdmin(tx: Tx, orderId: number): Promise<void> {
     await tx.$executeRaw`CALL admin_rembourser_commande(${orderId}::bigint)`;
+  }
+
+  async hold(tx: Tx, userId: number, tarifId: number, quantite: number, modePaiement: ModePaiement): Promise<Reservation> {
+    const rows = await tx.$queryRaw<HoldRow[]>`
+      SELECT reservation_id, expire_a, montant_total
+      FROM creer_reservation(${userId}::bigint, ${tarifId}::bigint, ${quantite}::integer, ${modePaiement}::text)`;
+    const row = rows[0];
+    if (!row) throw new Error('creer_reservation n’a renvoyé aucune ligne');
+    return {
+      id: toNumber(row.reservation_id),
+      tarifId,
+      quantite,
+      statut: 'active',
+      modePaiement,
+      expireA: row.expire_a,
+      montantTotal: toMoney(row.montant_total),
+    };
+  }
+
+  async confirm(tx: Tx, userId: number, reservationId: number): Promise<ConfirmResult> {
+    const rows = await tx.$queryRaw<ConfirmRow[]>`
+      SELECT commande_id, paiement_id, billet_ids, montant_total
+      FROM confirmer_reservation(${reservationId}::bigint, ${userId}::bigint)`;
+    const row = rows[0];
+    if (!row) throw new Error('confirmer_reservation n’a renvoyé aucune ligne');
+    return {
+      commandeId: toNumber(row.commande_id),
+      paiementId: toNumber(row.paiement_id),
+      billetIds: row.billet_ids.map(toNumber),
+      montantTotal: toMoney(row.montant_total),
+    };
   }
 
   private async orderRow(tx: Tx, orderId: number, userId?: number): Promise<OrderRow | null> {

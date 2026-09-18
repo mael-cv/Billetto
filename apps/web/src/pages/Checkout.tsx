@@ -8,8 +8,10 @@ import { ApiError, errorMessage } from "../lib/http";
 import { formatDate, formatEUR, formatTime } from "../lib/format";
 import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
+import type { ModePaiement, Reservation } from "../lib/types";
 import { Alert, Button, Card, EmptyState, Link } from "../components/ui";
 import { QuantitySelector } from "../components/QuantitySelector";
+import { HoldCountdown } from "../components/HoldCountdown";
 import { IconShield } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 
@@ -18,6 +20,8 @@ const checkoutSchema = z.object({
 });
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
+const RESERVATION_ERROR_CODES = new Set(["RESERVATION_EXPIREE", "RESERVATION_NON_ACTIVE"]);
+
 export function CheckoutPage() {
   const { navigate } = useRouter();
   const { cart, setCart, toast } = useStore();
@@ -25,10 +29,37 @@ export function CheckoutPage() {
   const queryClient = useQueryClient();
   const form = useForm<CheckoutForm>({ resolver: zodResolver(checkoutSchema) });
 
-  // Aucun calcul métier ici : acheter_billet() vérifie tarif, période, quota et
-  // calcule le montant. Le total affiché avant paiement est indicatif.
-  const purchase = useMutation({
-    mutationFn: () => api.purchase(cart!.tarifId, cart!.quantite),
+  // Aucun calcul métier ici : creer_reservation()/confirmer_reservation()
+  // vérifient tarif, période, quota et calculent le montant. Le total affiché
+  // avant paiement est indicatif.
+  const hold = useMutation({
+    mutationFn: () => api.hold(cart!.tarifId, cart!.quantite, cart!.modePaiement),
+    onSuccess: (reservation) => {
+      if (reservation.modePaiement === "virement") {
+        const slug = cart?.eventSlug;
+        const summary = cart
+          ? `&event=${encodeURIComponent(cart.eventNom)}&tarif=${encodeURIComponent(cart.tarifNom)}&quantite=${cart.quantite}`
+          : "";
+        setCart(null);
+        if (slug) void queryClient.invalidateQueries({ queryKey: ["event", slug] });
+        navigate(
+          `/checkout/awaiting-transfer?reservation=${reservation.id}&expireA=${encodeURIComponent(reservation.expireA)}` +
+            `&montant=${encodeURIComponent(reservation.montantTotal)}${summary}`,
+        );
+        return;
+      }
+      // Carte : paiement simulé quasi instantané, enchaîné automatiquement.
+      confirm.mutate(reservation.id);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && cart) {
+        void queryClient.invalidateQueries({ queryKey: ["event", cart.eventSlug] });
+      }
+    },
+  });
+
+  const confirm = useMutation({
+    mutationFn: (reservationId: number) => api.confirmHold(reservationId),
     onSuccess: (result) => {
       const slug = cart?.eventSlug;
       setCart(null);
@@ -43,6 +74,15 @@ export function CheckoutPage() {
       }
     },
   });
+
+  const reservation: Reservation | undefined = hold.data && hold.data.modePaiement === "carte" ? hold.data : undefined;
+  const isPending = hold.isPending || confirm.isPending;
+  const error = hold.error ?? confirm.error;
+  const reset = () => {
+    hold.reset();
+    confirm.reset();
+  };
+  const submit = () => hold.mutate();
 
   if (!cart)
     return (
@@ -61,8 +101,8 @@ export function CheckoutPage() {
     );
 
   const total = Number(cart.prix) * cart.quantite;
-  const error = purchase.error;
   const sellOut = error instanceof ApiError && error.code === "QUOTA_EPUISE";
+  const reservationLost = error instanceof ApiError && RESERVATION_ERROR_CODES.has(error.code);
 
   return (
     <>
@@ -74,7 +114,7 @@ export function CheckoutPage() {
           <h1 className="mt-3 font-display text-4xl font-extrabold tracking-tight">Paiement</h1>
         </div>
 
-        <form onSubmit={form.handleSubmit(() => purchase.mutate())} className="mt-8 grid gap-8 lg:grid-cols-[1fr_400px]" noValidate>
+        <form onSubmit={form.handleSubmit(submit)} className="mt-8 grid gap-8 lg:grid-cols-[1fr_400px]" noValidate>
           <div className="space-y-8">
             <section>
               <h2 className="mb-4 font-display text-lg font-semibold">Vos billets</h2>
@@ -95,9 +135,9 @@ export function CheckoutPage() {
                   value={cart.quantite}
                   min={0}
                   max={Math.min(10, cart.restantes)}
-                  disabled={purchase.isPending}
+                  disabled={isPending}
                   onChange={(q) => {
-                    purchase.reset();
+                    reset();
                     setCart(q === 0 ? null : { ...cart, quantite: q });
                   }}
                 />
@@ -117,15 +157,53 @@ export function CheckoutPage() {
             </section>
 
             <section>
+              <h2 className="mb-4 font-display text-lg font-semibold">Mode de paiement</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(["carte", "virement"] as ModePaiement[]).map((mode) => (
+                  <label
+                    key={mode}
+                    className={`flex cursor-pointer items-center gap-3 rounded-[16px] border p-4 text-sm transition-colors ${
+                      cart.modePaiement === mode ? "border-primary bg-primary/5" : "border-border"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="modePaiement"
+                      value={mode}
+                      checked={cart.modePaiement === mode}
+                      disabled={isPending}
+                      onChange={() => {
+                        reset();
+                        setCart({ ...cart, modePaiement: mode });
+                      }}
+                      className="size-4 accent-[#d6ff3f]"
+                    />
+                    <span>
+                      <span className="block font-medium">{mode === "carte" ? "Carte bancaire" : "Virement bancaire"}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {mode === "carte" ? "Réservation confirmée immédiatement" : "Réservation valable 72h, le temps du virement"}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section>
               <h2 className="mb-4 font-display text-lg font-semibold">Paiement</h2>
               <Card className="flex items-start gap-3 p-5 text-sm">
                 <IconShield className="mt-0.5 size-5 shrink-0 text-success" />
                 <div>
                   <div className="font-medium">Paiement simulé</div>
                   <p className="mt-1 text-muted-foreground">
-                    Environnement de démonstration : aucune donnée bancaire n'est demandée. La commande, le paiement et les
-                    billets sont créés ensemble, dans une seule transaction PostgreSQL.
+                    Environnement de démonstration : aucune donnée bancaire n'est demandée. Une réservation temporaire bloque
+                    d'abord vos places, puis est confirmée (paiement carte) dans le délai de sécurité affiché ci-dessous.
                   </p>
+                  {reservation && (
+                    <div className="mt-3">
+                      <HoldCountdown expireA={reservation.expireA} />
+                    </div>
+                  )}
                 </div>
               </Card>
             </section>
@@ -175,12 +253,13 @@ export function CheckoutPage() {
                           </Link>
                         </>
                       )}
+                      {reservationLost && " Relancez le paiement pour poser une nouvelle réservation."}
                     </Alert>
                   </div>
                 )}
 
-                <Button type="submit" size="lg" className="mt-5 w-full" loading={purchase.isPending}>
-                  {purchase.isPending ? "Paiement en cours…" : `Payer ${formatEUR(total)}`}
+                <Button type="submit" size="lg" className="mt-5 w-full" loading={isPending}>
+                  {isPending ? "Paiement en cours…" : `Payer ${formatEUR(total)}`}
                 </Button>
                 <p className="mt-3 text-center text-xs text-muted-foreground">
                   Remboursement possible jusqu'au début de l'événement.

@@ -8,6 +8,7 @@ import type {
   EventStatus,
   EventSummary,
   EventTypeNode,
+  ModePaiement,
   MyTicket,
   OrderDetail,
   OrderSummary,
@@ -16,6 +17,7 @@ import type {
   PriceAuditEntry,
   PurchaseResult,
   RecentOrder,
+  Reservation,
   Role,
   SalesSummary,
   Scope,
@@ -89,6 +91,10 @@ export const api = {
   // Achat et commandes
   purchase: (tarifId: number, quantite: number) =>
     http<PurchaseResult>("POST", "/tickets/purchase", { body: { tarifId, quantite } }),
+  // Réservation temporaire (hold) : bloque le quota, à confirmer avant expiration.
+  hold: (tarifId: number, quantite: number, modePaiement: ModePaiement) =>
+    http<Reservation>("POST", "/orders/hold", { body: { tarifId, quantite, modePaiement } }),
+  confirmHold: (reservationId: number) => http<PurchaseResult>("POST", `/orders/${reservationId}/confirm`),
   myTickets: (page = 1, pageSize = 100) => http<Page<MyTicket>>("GET", "/tickets/me", { query: { page, pageSize } }),
   myOrders: (page = 1, pageSize = 20) => http<Page<OrderSummary>>("GET", "/orders/me", { query: { page, pageSize } }),
   order: (id: number) => http<OrderDetail>("GET", `/orders/${id}`),

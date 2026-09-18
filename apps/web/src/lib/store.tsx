@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import type { ModePaiement } from "./types";
 
 // État purement d'interface : sélection de billets entre la page événement et le paiement,
 // et notifications. Le prix affiché est indicatif : le montant débité est calculé par l'API.
@@ -16,6 +17,7 @@ export interface CartSelection {
   prix: string;
   quantite: number;
   restantes: number;
+  modePaiement: ModePaiement;
 }
 
 export interface Toast {
