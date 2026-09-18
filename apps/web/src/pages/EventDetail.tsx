@@ -99,6 +99,7 @@ export function EventDetailPage({ slug }: { slug: string }) {
       prix: selectedTier.prix,
       quantite: selection.quantite,
       restantes: selectedTier.restantes,
+      modePaiement: "carte",
     });
     navigate("/checkout");
   };

@@ -41,15 +41,16 @@ model billets {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model commandes {
-  id             BigInt       @id(map: "pk_commandes") @default(autoincrement())
+  id             BigInt         @id(map: "pk_commandes") @default(autoincrement())
   utilisateur_id BigInt
-  statut         String       @default("pending")
-  montant_total  Decimal      @default(0) @db.Decimal(12, 2)
-  created_at     DateTime     @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime     @default(now()) @db.Timestamptz(6)
+  statut         String         @default("pending")
+  montant_total  Decimal        @default(0) @db.Decimal(12, 2)
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime       @default(now()) @db.Timestamptz(6)
   billets        billets[]
-  utilisateurs   utilisateurs @relation(fields: [utilisateur_id], references: [id], onUpdate: NoAction, map: "fk_commandes_utilisateur_id")
+  utilisateurs   utilisateurs   @relation(fields: [utilisateur_id], references: [id], onUpdate: NoAction, map: "fk_commandes_utilisateur_id")
   paiements      paiements[]
+  reservations   reservations[]
 
   @@index([utilisateur_id], map: "idx_commandes_utilisateur_id")
 }
@@ -125,6 +126,7 @@ model organisateurs {
   email        String         @unique(map: "uq_organisateurs_email")
   created_at   DateTime       @default(now()) @db.Timestamptz(6)
   updated_at   DateTime       @default(now()) @db.Timestamptz(6)
+  slug         String         @unique(map: "uq_organisateurs_slug")
   evenements   evenements[]
   utilisateurs utilisateurs[]
 }
@@ -150,18 +152,19 @@ model schema_migrations {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model tarifs {
-  id               BigInt     @id(map: "pk_tarifs") @default(autoincrement())
+  id               BigInt         @id(map: "pk_tarifs") @default(autoincrement())
   evenement_id     BigInt
   nom              String
-  prix             Decimal    @db.Decimal(10, 2)
+  prix             Decimal        @db.Decimal(10, 2)
   quota            Int
-  date_debut_vente DateTime   @db.Timestamptz(6)
-  date_fin_vente   DateTime   @db.Timestamptz(6)
-  actif            Boolean    @default(true)
-  created_at       DateTime   @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime   @default(now()) @db.Timestamptz(6)
+  date_debut_vente DateTime       @db.Timestamptz(6)
+  date_fin_vente   DateTime       @db.Timestamptz(6)
+  actif            Boolean        @default(true)
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
   billets          billets[]
-  evenements       evenements @relation(fields: [evenement_id], references: [id], onUpdate: NoAction, map: "fk_tarifs_evenement_id")
+  reservations     reservations[]
+  evenements       evenements     @relation(fields: [evenement_id], references: [id], onUpdate: NoAction, map: "fk_tarifs_evenement_id")
 
   @@unique([evenement_id, nom], map: "uq_tarifs_evenement_id_nom")
 }
@@ -193,5 +196,29 @@ model utilisateurs {
   amities_amities_utilisateur_idToutilisateurs amities[]      @relation("amities_utilisateur_idToutilisateurs")
   billets                                      billets[]
   commandes                                    commandes[]
+  reservations                                 reservations[]
   organisateurs                                organisateurs? @relation(fields: [organisateur_id], references: [id], onUpdate: NoAction, map: "fk_utilisateurs_organisateur_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reservations {
+  id             BigInt       @id(map: "pk_reservations") @default(autoincrement())
+  tarif_id       BigInt
+  utilisateur_id BigInt
+  quantite       Int
+  statut         String       @default("active")
+  mode_paiement  String
+  prix_unitaire  Decimal      @db.Decimal(10, 2)
+  expire_a       DateTime     @db.Timestamptz(6)
+  commande_id    BigInt?
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime     @default(now()) @db.Timestamptz(6)
+  commandes      commandes?   @relation(fields: [commande_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_reservations_commande_id")
+  tarifs         tarifs       @relation(fields: [tarif_id], references: [id], onUpdate: NoAction, map: "fk_reservations_tarif_id")
+  utilisateurs   utilisateurs @relation(fields: [utilisateur_id], references: [id], onUpdate: NoAction, map: "fk_reservations_utilisateur_id")
+
+  @@index([tarif_id, statut, expire_a], map: "ix_reservations_tarif_actives")
+  @@index([utilisateur_id], map: "ix_reservations_utilisateur_id")
 }
