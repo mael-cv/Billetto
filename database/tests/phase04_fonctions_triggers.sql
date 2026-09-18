@@ -34,7 +34,7 @@ DO $$
 DECLARE
     v_orga bigint; v_lieu bigint; v_type bigint; v_evt bigint; d record;
 BEGIN
-    INSERT INTO organisateurs (nom, email) VALUES ('Test Orga', 'test-orga@billetto.test')
+    INSERT INTO organisateurs (nom, email, slug) VALUES ('Test Orga', 'test-orga@billetto.test', 'test-orga')
     RETURNING id INTO v_orga;
     INSERT INTO lieux (nom, adresse, ville, code_postal, capacite)
     VALUES ('Test Salle', '1 rue du Test', 'Testville', '99000', 500)

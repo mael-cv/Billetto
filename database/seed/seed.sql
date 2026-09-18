@@ -82,12 +82,15 @@ WHERE NOT EXISTS (SELECT 1 FROM type_evenements c WHERE c.parent_id = t.id);
 -- -----------------------------------------------------------------------------
 -- organisateurs, lieux
 -- -----------------------------------------------------------------------------
-INSERT INTO organisateurs (id, nom, email, created_at, updated_at) OVERRIDING SYSTEM VALUE
+INSERT INTO organisateurs (id, nom, email, slug, created_at, updated_at) OVERRIDING SYSTEM VALUE
 SELECT g,
        (ARRAY['Nuits','Sonic','Arena','Horizon','Pulse','Lumière','Onde','Atlas'])[1 + g % 8]
            || ' ' || (ARRAY['Productions','Live','Events','Agency','Collective'])[1 + (g / 8) % 5]
            || ' ' || g,
        'orga' || g || '@billetto.test',
+       lower((ARRAY['nuits','sonic','arena','horizon','pulse','lumiere','onde','atlas'])[1 + g % 8]
+           || '-' || (ARRAY['productions','live','events','agency','collective'])[1 + (g / 8) % 5]
+           || '-' || g),
        p.ref - interval '3 years', p.ref - interval '3 years'
 FROM seed_util.p p, generate_series(1, p.n_org) AS g;
 
