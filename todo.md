@@ -28,12 +28,12 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [ ] Phase 08 — Documentation et CI (en cours selon `doc/TODO.md`, hors périmètre de ce plan)
 
 ## Phase 09 — Multi-tenant "collectifs"
-- [ ] Auditer les policies RLS existantes (`005_security.sql`) : confirmer le filtrage ligne à ligne par `organisateur_id = app_organisateur_id()`, pas seulement par rôle
-- [ ] Migration `007_multi_tenant.sql` : ajouter `organisateurs.slug` (pages vitrine séparées par collectif)
-- [ ] Garantir que toute nouvelle table (holds, waitlist, scans, webhooks) des phases 10-14 est rattachable à un seul organisateur, avec policy RLS dès sa création
-- [ ] Revue transverse API (`events`, `pricing`, `orders`, `analytics`) : défense en profondeur contre toute fuite de `organisateur_id`
-- [ ] Test : 3 organisateurs en parallèle, vérifier absence de fuite de données (ventes, `journal_tarifs`) entre collectifs
-- [ ] Test RLS direct en SQL : tentative de lecture des événements d'un autre organisateur doit échouer
+- [x] Auditer les policies RLS existantes (`005_security.sql`) : confirmer le filtrage ligne à ligne par `organisateur_id = app_organisateur_id()`, pas seulement par rôle
+- [x] Migration `007_multi_tenant.sql` : ajouter `organisateurs.slug` (pages vitrine séparées par collectif)
+- [x] Garantir que toute nouvelle table (holds, waitlist, scans, webhooks) des phases 10-14 est rattachable à un seul organisateur, avec policy RLS dès sa création
+- [x] Revue transverse API (`events`, `pricing`, `orders`, `analytics`) : défense en profondeur contre toute fuite de `organisateur_id`
+- [x] Test : 3 organisateurs en parallèle, vérifier absence de fuite de données (ventes, `journal_tarifs`) entre collectifs
+- [x] Test RLS direct en SQL : tentative de lecture des événements d'un autre organisateur doit échouer (0 ligne, comportement RLS attendu — pas une erreur)
 
 ## Phase 10 — Réservation temporaire (hold) + TTL différencié par mode de paiement
 - [ ] Migration `008_reservations.sql` : table `reservations` (`tarif_id, utilisateur_id, quantite, statut, mode_paiement, expire_a`)
