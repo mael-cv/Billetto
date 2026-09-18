@@ -36,8 +36,8 @@ function parallel(sqlTemplate) {
 }
 
 const setup = q(`
-  WITH o AS (INSERT INTO organisateurs (nom, email)
-             VALUES ('Concurrence', 'concurrence-' || txid_current() || '@billetto.test') RETURNING id),
+  WITH o AS (INSERT INTO organisateurs (nom, email, slug)
+             VALUES ('Concurrence', 'concurrence-' || txid_current() || '@billetto.test', 'concurrence-' || txid_current()) RETURNING id),
        l AS (INSERT INTO lieux (nom, adresse, ville, code_postal, capacite)
              VALUES ('Salle concurrence ' || txid_current(), '1 rue', 'Testville', '99000', 100) RETURNING id),
        u AS (INSERT INTO utilisateurs (email, password_hash, prenom, nom)
