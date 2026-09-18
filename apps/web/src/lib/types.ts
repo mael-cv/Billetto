@@ -86,6 +86,19 @@ export interface PurchaseResult {
   montantTotal: string;
 }
 
+export type ModePaiement = "carte" | "virement";
+export type ReservationStatus = "active" | "confirmee" | "expiree" | "annulee";
+
+export interface Reservation {
+  id: number;
+  tarifId: number;
+  quantite: number;
+  statut: ReservationStatus;
+  modePaiement: ModePaiement;
+  expireA: string;
+  montantTotal: string;
+}
+
 export interface OrderTicket {
   id: number;
   code: string;
