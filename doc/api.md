@@ -3,6 +3,8 @@
 Base : `http://localhost:3001/api/v1` — JSON — NestJS 11 + Fastify 5 — code : `apps/api`.
 
 ## Principes
+- La validation, l’authentification, l’autorisation, le CSRF et les limites d’entrée sont appliqués par l’API ; le frontend n’est jamais une frontière de confiance. Voir [Sécurité de l’API](api-security.md).
+- **Accès fermé par défaut.** Chaque route porte `@Authenticated(...)`, `@OptionalAuth()` ou `@Public()` ; sans déclaration explicite, le guard refuse la requête. Le rôle ne remplace pas les contrôles de propriété et de tenant appliqués par RLS.
 - **PostgreSQL décide.** L'API se connecte en `billetto_app` et, pour chaque requête, endosse le rôle PostgreSQL de l'utilisateur dans une transaction (`set_config('role', …, true)` + `set_config('app.user_id', …, true)`). Visibilité des lignes (RLS), droits (GRANT) et règles métier (`acheter_billet`, `rembourser_commande`) sont appliqués par la base ; l'API ne réimplémente ni quota, ni prix, ni filtre « ses événements ».
 - **Données d'acheteur sous le rôle visiteur.** Commandes, billets, achats et remboursements personnels passent toujours par `billetto_visiteur`, quel que soit le rôle applicatif : un organisateur qui achète un billet est un acheteur comme un autre.
 - **Invisible = inexistant.** Une ressource masquée par la RLS répond `404`, jamais `403` : l'API ne révèle pas son existence.
@@ -62,6 +64,7 @@ Légende accès : **public** (anonyme accepté), **connecté** (tout rôle), **o
 | POST | `/auth/login` | public | `{ email, password }` → 200 `{ user, csrfToken }` |
 | POST | `/auth/logout` | public | 204, supprime la session |
 | GET | `/auth/me` | connecté | `{ user: { id, email, prenom, nom, role, organisateurId } }` |
+| POST | `/auth/password` | connecté + CSRF | `{ currentPassword, newPassword }` ; vérifie le mot de passe actuel, applique Argon2id, incrémente la version de session et révoque immédiatement toutes les sessions (réponse 204, reconnexion requise) |
 
 ### Catalogue
 | Méthode | Chemin | Accès | Description |

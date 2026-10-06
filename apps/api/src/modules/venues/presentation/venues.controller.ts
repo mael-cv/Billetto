@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
 import type { Actor } from '../../../auth/domain/actor';
-import { CurrentActor } from '../../../auth/presentation/auth.decorators';
+import { CurrentActor, OptionalAuth } from '../../../auth/presentation/auth.decorators';
 import { paginationSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import { ListVenuesUseCase } from '../application/list-venues.use-case';
@@ -15,11 +15,13 @@ export class VenuesController {
   constructor(private readonly listVenues: ListVenuesUseCase) {}
 
   @Get('cities')
+  @OptionalAuth()
   cities(@CurrentActor() actor: Actor | null) {
     return this.listVenues.cities(actor);
   }
 
   @Get()
+  @OptionalAuth()
   list(
     @CurrentActor() actor: Actor | null,
     @Query(new ZodPipe(listVenuesQuerySchema)) query: z.infer<typeof listVenuesQuerySchema>,

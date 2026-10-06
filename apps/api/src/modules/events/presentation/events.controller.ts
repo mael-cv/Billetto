@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import { Authenticated, CurrentActor } from '../../../auth/presentation/auth.decorators';
+import { Authenticated, CurrentActor, OptionalAuth } from '../../../auth/presentation/auth.decorators';
 import type { Actor } from '../../../auth/domain/actor';
 import { idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
@@ -39,6 +39,7 @@ export class EventsController {
   ) {}
 
   @Get()
+  @OptionalAuth()
   list(@CurrentActor() actor: Actor | null, @Query(new ZodPipe(listEventsQuerySchema)) query: ListEventsQuery) {
     const { page, pageSize, scope, ...filters } = query;
     return this.listEvents.execute(actor, scope, filters, { page, pageSize });
@@ -61,6 +62,7 @@ export class EventsController {
   }
 
   @Get(':ref')
+  @OptionalAuth()
   get(
     @CurrentActor() actor: Actor | null,
     @Param('ref', new ZodPipe(eventRefSchema)) ref: { id: number } | { slug: string },

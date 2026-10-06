@@ -82,6 +82,8 @@ export const api = {
   register: (body: { email: string; password: string; prenom: string; nom: string }) =>
     http<{ user: User }>("POST", "/auth/register", { body }).then((r) => r.user),
   logout: () => http<void>("POST", "/auth/logout"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    http<void>("POST", "/auth/password", { body: { currentPassword, newPassword } }),
 
   // Catalogue
   events: (filters: EventFilters = {}) => http<Page<EventSummary>>("GET", "/events", { query: { ...filters } }),

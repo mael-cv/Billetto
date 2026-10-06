@@ -14,14 +14,14 @@ const eventSalesQuerySchema = paginationSchema.extend({
 });
 
 const dailySalesQuerySchema = z
-  .object({
+  .strictObject({
     from: dateSchema.default(() => new Date(Date.now() - 30 * DAY)),
     to: dateSchema.default(() => new Date(Date.now() + DAY)),
   })
   .refine((q) => q.to > q.from, { message: 'to doit être postérieure à from', path: ['to'] })
   .refine((q) => q.to.getTime() - q.from.getTime() <= 366 * DAY, { message: 'période limitée à 366 jours', path: ['to'] });
 
-const recentOrdersQuerySchema = z.object({
+const recentOrdersQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
 

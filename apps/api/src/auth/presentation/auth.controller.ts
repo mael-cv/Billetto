@@ -3,11 +3,12 @@ import type { FastifyReply } from 'fastify';
 import { APP_CONFIG, type AppConfig } from '../../common/config/config';
 import { ZodPipe } from '../../common/validation/zod.pipe';
 import { LoginUseCase } from '../application/login.use-case';
+import { ChangePasswordUseCase } from '../application/change-password.use-case';
 import { RegisterUseCase } from '../application/register.use-case';
 import { SessionTokenService } from '../application/session-token.service';
 import type { Actor } from '../domain/actor';
-import { Authenticated, CurrentActor, SkipCsrf } from './auth.decorators';
-import { type LoginDto, loginSchema, type RegisterDto, registerSchema } from './auth.dto';
+import { Authenticated, CurrentActor, Public, SkipCsrf } from './auth.decorators';
+import { changePasswordSchema, type ChangePasswordDto, type LoginDto, loginSchema, type RegisterDto, registerSchema } from './auth.dto';
 import { clearSessionCookie, issueCsrfToken, setSessionCookie } from './cookies';
 
 const toUser = (actor: Actor) => ({
@@ -24,18 +25,21 @@ export class AuthController {
   constructor(
     private readonly login: LoginUseCase,
     private readonly register: RegisterUseCase,
+    private readonly changePassword: ChangePasswordUseCase,
     private readonly tokens: SessionTokenService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /** Émet le jeton CSRF à renvoyer dans l'en-tête X-CSRF-Token. */
   @Get('csrf')
+  @Public()
   @SkipCsrf()
   csrf(@Res({ passthrough: true }) reply: FastifyReply) {
     return { csrfToken: issueCsrfToken(reply, this.config) };
   }
 
   @Post('login')
+  @Public()
   @HttpCode(200)
   async doLogin(@Body(new ZodPipe(loginSchema)) body: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
     const actor = await this.login.execute(body.email, body.password);
@@ -43,6 +47,7 @@ export class AuthController {
   }
 
   @Post('register')
+  @Public()
   @HttpCode(201)
   async doRegister(
     @Body(new ZodPipe(registerSchema)) body: RegisterDto,
@@ -53,6 +58,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @Public()
   @HttpCode(204)
   logout(@Res({ passthrough: true }) reply: FastifyReply): void {
     clearSessionCookie(reply, this.config);
@@ -62,6 +68,19 @@ export class AuthController {
   @Authenticated()
   me(@CurrentActor() actor: Actor) {
     return { user: toUser(actor) };
+  }
+
+  @Post('password')
+  @Authenticated()
+  @HttpCode(204)
+  async updatePassword(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodPipe(changePasswordSchema)) body: ChangePasswordDto,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<void> {
+    await this.changePassword.execute(actor, body.currentPassword, body.newPassword);
+    // Le compteur de version a été incrémenté en base : toutes les sessions sont révoquées.
+    clearSessionCookie(reply, this.config);
   }
 
   private openSession(actor: Actor, reply: FastifyReply) {

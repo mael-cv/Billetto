@@ -9,7 +9,7 @@ const statut = z.enum(['draft', 'published', 'cancelled', 'finished']);
  * manage : droits du rôle connecté (organisateur : ses événements, y compris brouillons ; admin : tous).
  */
 export const scopeSchema = z.enum(['public', 'manage']).default('public');
-export const scopeQuerySchema = z.object({ scope: scopeSchema });
+export const scopeQuerySchema = z.strictObject({ scope: scopeSchema });
 export type Scope = z.infer<typeof scopeSchema>;
 
 export const attributesSchema = z
