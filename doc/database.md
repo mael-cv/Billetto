@@ -47,8 +47,7 @@ erDiagram
 | 011 | `billets.code_verification`, `billets_scans`, `checkin_secret` (check-in, phase 13) |
 | 012 | Vues étendues : réservé / liste d'attente / taux d'occupation (phase 14) |
 | 013 | `evenements.delai_annulation`, `en_ligne`, `fuseau_horaire` ; `emails_sortants` (phase 15) |
-
-La Phase 11 (webhooks de paiement, `paiement_webhooks`) n'est pas implémentée.
+| 014 | `paiement_webhooks` + `traiter_paiement_webhook()` : idempotence des webhooks de paiement (phase 11, numérotée après la 15 car livrée plus tard) |
 
 ## Normalisation
 - **1FN** : valeurs atomiques, pas de listes dans une cellule (pas de `tags = 'vip,concert'`).
@@ -232,7 +231,7 @@ L'API s'appuie sur le code, jamais sur le texte du message.
 **Écart assumé avec le TODO de la phase 16**, qui proposait `BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon de scan et `BT033` webhook dupliqué. Ces numéros étaient déjà attribués depuis la phase 10 et l'API, le front et les tests en dépendent : ils n'ont pas été renumérotés.
 - La réservation expirée est `BT033`, la liste d'attente fermée `BT043`.
 - Un **doublon de scan n'est pas une erreur** : c'est un résultat enregistré (`billets_scans.resultat = 'doublon'`, avec le premier scan), renvoyé en 200 pour que le contrôleur voie qui est déjà entré.
-- Aucun code webhook n'existe tant que la Phase 11 n'est pas faite.
+- Un **webhook dupliqué n'est pas une erreur** non plus : `traiter_paiement_webhook` l'ignore (`INSERT … ON CONFLICT DO NOTHING` sur `evenement_externe_id`) et l'API répond 200, comme l'attend un prestataire qui rejoue.
 
 ### Triggers
 | Trigger | Table | Moment | Rôle |

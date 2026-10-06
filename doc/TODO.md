@@ -50,12 +50,12 @@ Détail : [phases/phase-16-durcissement.md](phases/phase-16-durcissement.md) · 
 | 08 — Docs, CI | 🔄 (CI et doc base en phase 16) |
 | 09 — Multi-tenant collectifs | ✅ |
 | 10 — Réservation temporaire + TTL | ✅ |
-| 11 — Idempotence webhook paiement | ⬜ |
+| 11 — Idempotence webhook paiement | ✅ (migration 014) |
 | 12 — Liste d'attente | ✅ |
 | 13 — Check-in QR offline-first | ✅ (test mobile manuel ⬜) |
 | 14 — Dashboard temps réel | ✅ |
 | 15 — Souhaits secondaires | ✅ |
-| 16 — Charge, durcissement, docs, CI | ✅ hors webhook |
+| 16 — Charge, durcissement, docs, CI | ✅ (vague webhook de charge à ajouter) |
 
 ## Reste à vérifier (phase 01)
 - ✅ Conteneur `api` (phase 06)
@@ -73,3 +73,4 @@ Détail : [phases/phase-16-durcissement.md](phases/phase-16-durcissement.md) · 
 - 2026-09-18 — Phase 09 livrée : `007_multi_tenant.sql` (organisateurs.slug), audit RLS + revue API sans écart trouvé, tests `phase09_multi_tenant.sql` verts, phase 08 (Docs/CI) reste ⬜ et sera traitée séparément.
 - Phases 10, 12 à 15 livrées (migrations 008 à 013) : réservations + quota unifié, liste d'attente FIFO, check-in QR offline-first, dashboard temps réel, annulation self-service, e-mails (outbox), export CSV, fuseaux horaires.
 - 2026-10-06 — Phase 16 livrée hors webhook : charge combinée via l'API (`pnpm test:load`), isolation RLS rejouée sur les tables 10–15 avec garde-fou automatique, `database.md` et docs de phases à jour, CI GitHub Actions. Phase 11 (webhooks) toujours à faire ; numérotation des codes BT conservée (voir `database.md`).
+- Phase 11 (webhooks) fusionnée avec master : migration renumérotée `014_webhooks.sql` (013 = phase 15).
