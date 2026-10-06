@@ -100,6 +100,9 @@ export async function cleanFixtures(): Promise<void> {
     await tx.$executeRaw`
       DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ANY(${eventIds}::bigint[]))`;
     await tx.$executeRaw`
+      DELETE FROM paiement_webhooks WHERE reservation_id IN (SELECT id FROM reservations WHERE tarif_id IN (
+        SELECT id FROM tarifs WHERE evenement_id = ANY(${eventIds}::bigint[])))`;
+    await tx.$executeRaw`
       DELETE FROM reservations WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ANY(${eventIds}::bigint[]))`;
     await tx.$executeRaw`DELETE FROM paiements WHERE commande_id = ANY(${orderIds}::bigint[])`;
     await tx.$executeRaw`DELETE FROM billets WHERE commande_id = ANY(${orderIds}::bigint[])`;

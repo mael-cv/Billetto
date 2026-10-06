@@ -1,4 +1,4 @@
-# Billetto
+﻿# Billetto
 
 https://canva.link/6j4o04nwduhqlv1
 
@@ -65,6 +65,17 @@ Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de 
 | `pnpm db:pull` | Régénérer `prisma/schema.prisma` depuis la base |
 | `pnpm dev` / `pnpm build` / `pnpm lint` | Développement, build de production et qualité |
 
+## Webhook de paiement (phase 11)
+
+L’API expose `POST /api/v1/payments/webhook`. Le corps JSON attendu contient `eventId`, `type` et `reservationId`. La signature est le HMAC-SHA256 hexadécimal du corps brut exact, transmis dans `X-Billetto-Signature`. Le secret partagé `PAYMENTS_WEBHOOK_SECRET` doit contenir au moins 32 caractères aléatoires ; configurez-le dans `.env` (voir `.env.example`). Sans secret configuré, l’endpoint répond `503`.
+
+Le type `payment.succeeded` confirme la réservation. Les autres types, comme `payment.failed`, sont journalisés sans créer de billets. L’identifiant externe est unique : un rejeu concurrent ou ultérieur ne confirme pas une deuxième fois la réservation. Le journal webhook et la confirmation sont dans la même transaction.
+
+Générez le secret avec :
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
 ## Comptes de démonstration
 
 | E-mail | Rôle |

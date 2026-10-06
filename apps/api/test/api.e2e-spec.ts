@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaService } from '../src/common/database/prisma.service';
 import { cleanFixtures, createFixtures, email, type Fixtures } from './fixtures';
@@ -9,6 +10,7 @@ import { Client, DEMO_PASSWORD, owner, RUN, startApp, TEST_PASSWORD, testConfig 
  * appliquée par PostgreSQL (GRANT, RLS, fonctions), pas seulement par l'API.
  */
 describe('API Billetto (e2e)', () => {
+  const webhookSecret = 'api-e2e-webhook-secret-with-at-least-32-characters';
   let app: NestFastifyApplication;
   let fx: Fixtures;
   let anonyme: Client;
@@ -20,7 +22,7 @@ describe('API Billetto (e2e)', () => {
 
   beforeAll(async () => {
     fx = await createFixtures();
-    app = await startApp();
+    app = await startApp(testConfig({ PAYMENTS_WEBHOOK_SECRET: webhookSecret }));
     anonyme = await Client.anonymous(app);
     visiteur = await Client.login(app, 'demo-visiteur@billetto.test', DEMO_PASSWORD);
     orgaA = await Client.login(app, 'demo-organisateur@billetto.test', DEMO_PASSWORD);
@@ -118,6 +120,55 @@ describe('API Billetto (e2e)', () => {
       const res = await anonyme.get('/nexiste-pas');
       expect(res.statusCode).toBe(404);
       expect(res.json()).toMatchObject({ statusCode: 404 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('webhook de paiement', () => {
+    it('rejette une signature invalide, puis confirme une fois et rend le rejeu idempotent', async () => {
+      const [tarif] = await owner.$queryRaw<{ id: bigint }[]>`
+        INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
+        VALUES (${fx.eventFutur}, ${`Webhook ${RUN}`}, 25, 3, now() - interval '1 day', now() + interval '29 days')
+        RETURNING id`;
+      const [buyer] = await owner.$queryRaw<{ id: bigint }[]>`
+        SELECT id FROM utilisateurs WHERE email = 'demo-visiteur@billetto.test'`;
+      const [hold] = await owner.$queryRaw<{ reservation_id: bigint }[]>`
+        SELECT reservation_id FROM creer_reservation(${buyer.id}, ${tarif.id}, 1, 'carte')`;
+      const event = {
+        eventId: `e2e-webhook-${RUN}`,
+        type: 'payment.succeeded',
+        reservationId: Number(hold.reservation_id),
+      };
+      const rawBody = JSON.stringify(event);
+      const invalid = await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments/webhook',
+        payload: rawBody,
+        headers: { 'content-type': 'application/json', 'x-billetto-signature': '0'.repeat(64) },
+      });
+      expect(invalid.statusCode).toBe(401);
+      expect(invalid.json()).toMatchObject({ error: 'SIGNATURE_WEBHOOK_INVALIDE' });
+
+      const signature = createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+      const deliver = () =>
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/payments/webhook',
+          payload: rawBody,
+          headers: { 'content-type': 'application/json', 'x-billetto-signature': signature },
+        });
+      const first = await deliver();
+      const replay = await deliver();
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toMatchObject({ duplicate: false, commandeId: expect.any(Number), billetIds: [expect.any(Number)] });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toMatchObject({ duplicate: true, commandeId: null, billetIds: null });
+
+      const [{ webhook_count, ticket_count }] = await owner.$queryRaw<{ webhook_count: bigint; ticket_count: bigint }[]>`
+        SELECT (SELECT count(*) FROM paiement_webhooks WHERE evenement_externe_id = ${event.eventId}) AS webhook_count,
+               (SELECT count(*) FROM billets WHERE commande_id = ${first.json().commandeId}) AS ticket_count`;
+      expect(Number(webhook_count)).toBe(1);
+      expect(Number(ticket_count)).toBe(1);
     });
   });
 

@@ -11,6 +11,11 @@ export const configSchema = z.object({
   // Compte restreint billetto_app : l'API ne se connecte jamais en propriétaire.
   APP_DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'URL PostgreSQL attendue'),
   JWT_SECRET: z.string().min(32, 'au moins 32 caractères'),
+  // Facultatif en développement sans prestataire ; requis pour accepter un webhook.
+  PAYMENTS_WEBHOOK_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32, 'au moins 32 caractères').optional(),
+  ),
   SESSION_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(7_200),
   CORS_ORIGIN: z.url(),
   COOKIE_SECURE: booleanString,
