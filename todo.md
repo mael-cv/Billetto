@@ -86,12 +86,12 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte — `database/tests/phase15_souhaits.sql`, e2e « souhaits secondaires », `tests/timezones.spec.ts`, `csv.spec.ts`, `notifications.spec.ts`
 
 ## Phase 16 — Charge, concurrence, durcissement, documentation
-- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus)
-- [ ] Rejouer les tests d'isolation RLS (phase 09) sur toutes les tables des phases 10-14
-- [ ] Test d'idempotence webhook sous rejeu massif
-- [ ] Documenter chaque phase (`doc/phases/phase-09-*.md` à `phase-15-*.md`), étendre les codes d'erreur (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon scan, `BT033` webhook dupliqué)
-- [ ] Mettre à jour `doc/database.md`
-- [ ] Intégrer les nouveaux scripts de test/charge au pipeline CI
+- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus) — ⚠️ fait **hors webhook** (`pnpm test:load`, API complète) ; partie webhook : dépend de la Phase 11
+- [x] Rejouer les tests d'isolation RLS (phase 09) sur toutes les tables des phases 10-14 — `database/tests/phase16_isolation.sql` + garde-fou : toute table lisible par visiteur/organisateur doit avoir une RLS forcée
+- [ ] Test d'idempotence webhook sous rejeu massif — dépend de la Phase 11 (non implémentée)
+- [x] Documenter chaque phase (`doc/phases/phase-09-*.md` à `phase-15-*.md`), étendre les codes d'erreur (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon scan, `BT033` webhook dupliqué) — phases 09–16 documentées (11 : fiche « à faire ») ; **numérotation conservée** (BT030–033 réservations, BT043 liste d’attente, doublon de scan = résultat et non erreur), correspondance dans `doc/database.md`
+- [x] Mettre à jour `doc/database.md`
+- [x] Intégrer les nouveaux scripts de test/charge au pipeline CI — `.github/workflows/ci.yml` : checks puis base vierge (migrations, seeds, `db:test`, `test:e2e`, `test:load`)
 
 ## Risques techniques principaux
 
