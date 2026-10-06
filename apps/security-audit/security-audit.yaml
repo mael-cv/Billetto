@@ -1,0 +1,110 @@
+# Configuration par défaut de la plateforme security-audit.
+# Toutes les valeurs peuvent être surchargées par la CLI (--base-url, --profile, ...)
+# ou par une autre config passée via --config <path>.
+
+target:
+  # Cible du pentest black-box. L'API Billetto directe.
+  base_url: http://127.0.0.1:3001/api/v1
+  # Seuls ces hôtes sont autorisés. Toute autre cible est refusée (target-safety).
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
+    - "::1"
+  # Proxy nginx alternatif (comparaison direct/proxied pour http-desync).
+  proxy_url: http://127.0.0.1:3000/api
+
+# Racine du dépôt à auditer en white-box (relative au cwd d'exécution).
+repo_root: ../..
+
+# Comptes de test. JAMAIS de vrais credentials : comptes de démo seedés.
+accounts:
+  password_env: DEMO_PASSWORD
+  password_default: Billetto-Demo-2026!
+  user_a: demo-visiteur@billetto.test
+  organizer: demo-organisateur@billetto.test
+  admin: demo-admin@billetto.test
+  # USER_B est inscrit à chaud via POST /auth/register (rôle visitor).
+  user_b_prefix: pentest-userb
+
+# Cycle de vie de l'application cible : détection + auto-start optionnel.
+lifecycle:
+  health_path: /health
+  health_timeout_ms: 60000
+  # Commande lancée si la cible est injoignable (auto-start). Vide = pas d'auto-start.
+  start_command: ""
+  # Exemple : "docker compose up -d --wait api"  ou  "pnpm dev"
+
+# Brute force borné et contrôlé (jamais massif).
+bruteforce:
+  enabled: true
+  max_attempts: 20
+  concurrency: 1
+  delay_ms: 250
+
+# Limites de sûreté globales (safe defaults).
+limits:
+  concurrency: 4
+  max_requests: 5000
+  request_timeout_ms: 8000
+
+# Scanners externes optionnels. detect = chercher le binaire ; jamais requis.
+scanners:
+  semgrep: { enabled: true }
+  gitleaks: { enabled: true }
+  trivy: { enabled: true }
+  osv-scanner: { enabled: true }
+  nuclei: { enabled: false }
+  zap: { enabled: false }
+
+# Scan de secrets : respecte .gitignore par défaut (--all-files pour tout inclure).
+secrets:
+  all_files: false
+
+# Profils d'exécution (toggles de catégories/moteurs).
+profiles:
+  quick:
+    discovery: true
+    auth: true
+    authorization: true
+    fuzzing: false
+    bruteforce: false
+    injection: false
+    business_logic: false
+    resource_exhaustion: false
+    http_desync: false
+    whitebox: false
+  standard:
+    discovery: true
+    auth: true
+    authorization: true
+    fuzzing: true
+    bruteforce: true
+    injection: true
+    business_logic: false
+    resource_exhaustion: false
+    http_desync: false
+    whitebox: true
+  full:
+    discovery: true
+    auth: true
+    authorization: true
+    fuzzing: true
+    bruteforce: true
+    injection: true
+    business_logic: true
+    resource_exhaustion: true
+    http_desync: true
+    whitebox: true
+
+# Routes honeypot (volontairement vulnérables, hors compte des vulnérabilités réelles).
+honeypots: []
+
+# Seuil de sécurité (CI). N'évalue que les findings REAL_VULNERABILITY.
+security_gate:
+  fail_on:
+    - CRITICAL
+    - HIGH
+  max_medium: 10
+
+output:
+  dir: ../../doc/security-audit

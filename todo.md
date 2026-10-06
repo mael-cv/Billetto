@@ -110,3 +110,21 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - `apps/api/src/modules/orders/` et `apps/api/src/modules/payments/` (extensions principales)
 - `database/scripts/concurrency.mjs` (tests de charge à étendre)
 - `doc/phases/phase-06-api.md`, `phase-07-front.md` (style à répliquer pour les nouvelles phases)
+
+## Plateforme `security-audit` (moteur de pentest + audit)
+
+Nouveau package workspace `apps/security-audit` (TS via `tsx`). Plan : `~/.claude/plans/pasted-content-id-57f4-pentest-snoopy-lighthouse.md`.
+
+- [x] P0 — Scaffold package (package.json, tsconfig, jest, CLI, config YAML)
+- [x] P1 — Cœur : target-safety, http-client borné, sessions CSRF, callback SSRF, lifecycle, finding model, CVSS/CWE/OWASP, coverage, dedup, evidence+redaction
+- [x] P2 — Discovery (routes depuis le code NestJS + sondage runtime)
+- [x] P3 — Black-box A : http-methods, middleware, auth, account-enum, bruteforce borné, authorization/IDOR/BOLA, privesc, differential
+- [x] P4 — Black-box B : fuzzing, injection, xss, csrf, cors, headers, cookies, session, jwt, error-handling, debug-endpoints, upload, traversal, ssrf, open-redirect, api/mass-assignment, rate-limit, resource-exhaustion, http-desync, websockets, timing, business-logic, honeypots
+- [x] P5 — White-box : sast, secrets, dependencies, configuration, docker, cicd, infrastructure + registre scanners externes (Semgrep/Gitleaks/Trivy/OSV, NOT_INSTALLED géré)
+- [x] P6 — Corrélation BB↔WB + déduplication
+- [x] P7 — Reporting JSON/Markdown/HTML + GitHub step summary + security gate + exit codes
+- [x] P8 — Retest (`--retest SEC-xxx`) + AI Review Package (offline, sans clé API)
+- [x] White-box exécuté sur le dépôt réel (faux positifs corrigés : `.exec()` regex, `${VAR}`)
+- [x] P8bis — Fixture volontairement vulnérable + tests Jest (32 tests, 17 d'acceptance — chaque vuln plantée retrouvée, honeypot classé, 0 FP sur route saine)
+- [x] P9 — Run black-box réel contre Billetto démarré : audit complet 91 % de couverture, 0 CRITICAL/HIGH, gate PASS ; bugs du framework corrigés (FP `.exec()`, `${VAR}`, 429→business-logic, auto-match des règles du scanner, session rate-limitée → INCONCLUSIVE)
+- [x] P9 — Intégration : `.github/workflows/security-audit.yml`, `.vscode/{tasks,launch}.json`, hook `ci.yml` (typecheck + tests), `doc/security-audit.md`, `README.md`
