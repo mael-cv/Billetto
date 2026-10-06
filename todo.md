@@ -36,19 +36,19 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test RLS direct en SQL : tentative de lecture des événements d'un autre organisateur doit échouer (0 ligne, comportement RLS attendu — pas une erreur)
 
 ## Phase 10 — Réservation temporaire (hold) + TTL différencié par mode de paiement
-- [ ] Migration `008_reservations.sql` : table `reservations` (`tarif_id, utilisateur_id, quantite, statut, mode_paiement, expire_a`)
-- [ ] Étendre la contrainte `CHECK` sur `commandes.statut` pour ajouter `en_attente_virement`
-- [ ] Fonction `creer_reservation(...)` : même verrou `FOR UPDATE` sur `tarifs` que `acheter_billet`, TTL selon `mode_paiement` (carte ~10-15 min, virement ~48-72h, configurable)
-- [ ] Fonction `confirmer_reservation(reservation_id)` : transforme la réservation en commande `paid`
-- [ ] Calcul de quota occupé étendu pour inclure les réservations `active` avec `expire_a > now()` (expiration lazy, garantie anti-survente)
-- [ ] Job de purge périodique (`statut = 'expiree'`) pour le reporting uniquement, jamais source de vérité anti-survente
-- [ ] API : `POST /orders/hold`, `POST /orders/:id/confirm`
-- [ ] Front : compte à rebours sur `Checkout` (carte), écran "en attente de virement" avec délai
-- [ ] Test de concurrence (adapter `database/scripts/concurrency.mjs`) : N holds simultanés sur tarif à quota fixe, zéro survente
-- [ ] Test : hold expiré ne bloque plus le quota
+- [x] Migration `008_reservations.sql` : table `reservations` (`tarif_id, utilisateur_id, quantite, statut, mode_paiement, expire_a`)
+- [x] Étendre la contrainte `CHECK` sur `commandes.statut` pour ajouter `en_attente_virement` (migration `009_reservations_quota.sql`)
+- [x] Fonction `creer_reservation(...)` : même verrou `FOR UPDATE` sur `tarifs` que `acheter_billet`, TTL selon `mode_paiement` (carte ~10-15 min, virement ~48-72h, configurable)
+- [x] Fonction `confirmer_reservation(reservation_id)` : transforme la réservation en commande `paid`
+- [x] Calcul de quota occupé étendu pour inclure les réservations `active` avec `expire_a > now()` (expiration lazy, garantie anti-survente) — unifié via `places_occupees()` dans `acheter_billet`, `creer_reservation` et `places_restantes` (009)
+- [x] Job de purge périodique (`statut = 'expiree'`) pour le reporting uniquement, jamais source de vérité anti-survente — `ReservationsPurgeJob` côté API (`RESERVATIONS_PURGE_INTERVAL_MS`, défaut 60 s)
+- [x] API : `POST /orders/hold`, `POST /orders/:id/confirm`
+- [x] Front : compte à rebours sur `Checkout` (carte), écran "en attente de virement" avec délai
+- [x] Test de concurrence (adapter `database/scripts/concurrency.mjs`) : N holds simultanés sur tarif à quota fixe, zéro survente
+- [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `009_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [ ] Migration `010_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
 - [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
 - [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
 - [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé

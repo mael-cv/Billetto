@@ -9,6 +9,11 @@
 //      Q holds actifs, zéro survente sur les réservations concurrentes.
 //   4. Un hold expiré (p_ttl_override) ne doit plus compter dans le quota :
 //      testé séquentiellement (pas besoin de concurrence), via pg_sleep.
+//   5. acheter_billet() sur un tarif entièrement réservé (holds actifs) : N
+//      achats simultanés, zéro succès (quota unifié, migration 009).
+//   6. Un hold expiré ne bloque plus acheter_billet() non plus.
+//   7. purger_reservations_expirees() marque les holds expirés sans toucher
+//      les holds actifs (reporting uniquement).
 //
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
@@ -52,12 +57,13 @@ const setup = q(`
              FROM o, l RETURNING id, organisateur_id, lieu_id),
        t AS (INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
              SELECT e.id, v.nom, 20, ${QUOTA}, now() - interval '1 day', now() + interval '29 days'
-             FROM e, (VALUES ('Verrou'), ('Naif'), ('Hold'), ('Expiry')) v(nom) RETURNING id, nom)
+             FROM e, (VALUES ('Verrou'), ('Naif'), ('Hold'), ('Expiry'), ('ExpiryBuy')) v(nom) RETURNING id, nom)
   SELECT (SELECT id FROM u) || ' ' || (SELECT id FROM e) || ' ' || (SELECT id FROM o) || ' ' ||
          (SELECT id FROM l) || ' ' || (SELECT id FROM t WHERE nom = 'Verrou') || ' ' || (SELECT id FROM t WHERE nom = 'Naif') || ' ' ||
-         (SELECT id FROM t WHERE nom = 'Hold') || ' ' || (SELECT id FROM t WHERE nom = 'Expiry')
+         (SELECT id FROM t WHERE nom = 'Hold') || ' ' || (SELECT id FROM t WHERE nom = 'Expiry') || ' ' ||
+         (SELECT id FROM t WHERE nom = 'ExpiryBuy')
 `);
-const [user, evt, orga, lieu, tVerrou, tNaif, tHold, tExpiry] = setup.split(/\s+/).map(Number);
+const [user, evt, orga, lieu, tVerrou, tNaif, tHold, tExpiry, tExpiryBuy] = setup.split(/\s+/).map(Number);
 
 q(`
   CREATE SCHEMA IF NOT EXISTS demo_concurrence;
@@ -108,6 +114,7 @@ try {
   // réussir sans dépendre d'un job de purge (expiration lazy).
   for (let i = 0; i < QUOTA; i++) {
     q(`SELECT reservation_id FROM creer_reservation(${user}, ${tExpiry}, 1, 'carte', interval '1 second')`);
+    q(`SELECT reservation_id FROM creer_reservation(${user}, ${tExpiryBuy}, 1, 'carte', interval '1 second')`);
   }
   q(`SELECT pg_sleep(1.5)`);
   let expiryFreed = false;
@@ -120,6 +127,36 @@ try {
   }
   console.log(`  hold expiré libère le quota : ${expiryFreed ? 'OK' : `ÉCHEC (${expiryError})`}`);
 
+  let expiryBuyFreed = false;
+  let expiryBuyError = '';
+  try {
+    q(`SELECT commande_id FROM acheter_billet(${user}, ${tExpiryBuy}, ${QUOTA})`);
+    expiryBuyFreed = true;
+  } catch (err) {
+    expiryBuyError = String(err);
+  }
+  console.log(`  hold expiré libère le quota (acheter_billet) : ${expiryBuyFreed ? 'OK' : `ÉCHEC (${expiryBuyError})`}`);
+
+  // Quota de tHold entièrement pris par les holds actifs du test 3 : aucun
+  // achat direct ne doit passer.
+  console.log(`» phase 10 : ${N} achats simultanés sur un tarif entièrement réservé`);
+  const surReserve = parallel(`SELECT commande_id FROM acheter_billet(${user}, ${tHold}, 1)`);
+  const vendusHold = Number(q(`SELECT count(*) FROM billets WHERE tarif_id = ${tHold}`));
+  const restantsHold = Number(q(`SELECT places_restantes(${tHold})`));
+  console.log(
+    `  acheter_billet sur holds actifs : ${surReserve.ok} succès, ${surReserve.quota} refus BT006, ${vendusHold} billets, ${restantsHold} places restantes`,
+  );
+
+  // tExpiry : QUOTA holds expirés + 1 hold actif de QUOTA places.
+  q(`CALL purger_reservations_expirees()`);
+  const [expirees, actives] = q(
+    `SELECT count(*) FILTER (WHERE statut = 'expiree') || ' ' || count(*) FILTER (WHERE statut = 'active')
+     FROM reservations WHERE tarif_id = ${tExpiry}`,
+  )
+    .split(/\s+/)
+    .map(Number);
+  console.log(`  purge : ${expirees} holds marqués expirés, ${actives} hold actif conservé`);
+
   const checks = [
     [avecVerrou.other.length === 0, `erreurs inattendues : ${avecVerrou.other.join(' | ')}`],
     [avecVerrou.ok === QUOTA, `acheter_billet : ${QUOTA} succès attendus, ${avecVerrou.ok}`],
@@ -131,6 +168,12 @@ try {
     [holds.quota === N - QUOTA, `creer_reservation : ${N - QUOTA} refus attendus, ${holds.quota}`],
     [reservesHold === QUOTA, `creer_reservation : ${QUOTA} réservations actives attendues en base, ${reservesHold}`],
     [expiryFreed, `un hold expiré doit libérer le quota sans dépendre de la purge (${expiryError})`],
+    [expiryBuyFreed, `un hold expiré doit libérer le quota pour acheter_billet (${expiryBuyError})`],
+    [surReserve.other.length === 0, `acheter_billet sur holds : erreurs inattendues : ${surReserve.other.join(' | ')}`],
+    [surReserve.ok === 0, `acheter_billet sur holds : 0 succès attendu, ${surReserve.ok}`],
+    [surReserve.quota === N, `acheter_billet sur holds : ${N} refus attendus, ${surReserve.quota}`],
+    [vendusHold === 0 && restantsHold === 0, `tarif réservé : 0 billet / 0 place restante attendus, ${vendusHold} / ${restantsHold}`],
+    [expirees === QUOTA && actives === 1, `purge : ${QUOTA} expirés / 1 actif attendus, ${expirees} / ${actives}`],
   ];
   for (const [ok, msg] of checks) {
     if (!ok) {
@@ -141,6 +184,7 @@ try {
   if (!failed) {
     console.log(`✓ aucune survente avec verrou ; survente reproduite sans verrou (${vendusNaif}/${QUOTA})`);
     console.log(`✓ aucune survente sur les holds concurrents ; hold expiré libère le quota (expiration lazy)`);
+    console.log(`✓ achat direct bloqué par les holds actifs ; purge = reporting uniquement`);
   }
 } finally {
   q(`
@@ -149,7 +193,7 @@ try {
     DELETE FROM reservations WHERE utilisateur_id = ${user};
     DELETE FROM commandes WHERE utilisateur_id = ${user};
     DELETE FROM tarifs WHERE evenement_id = ${evt};
-    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry});
+    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy});
     DELETE FROM evenements WHERE id = ${evt};
     DELETE FROM lieux WHERE id = ${lieu};
     DELETE FROM utilisateurs WHERE id = ${user};
