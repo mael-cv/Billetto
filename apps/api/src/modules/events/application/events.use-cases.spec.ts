@@ -36,8 +36,8 @@ function setup() {
   return { db, repo, runs };
 }
 
-const organizer: Actor = { userId: 2, role: 'organizer', organisateurId: 7, email: 'o@t', prenom: 'O', nom: 'O' };
-const admin: Actor = { userId: 1, role: 'admin', organisateurId: null, email: 'a@t', prenom: 'A', nom: 'A' };
+const organizer: Actor = { userId: 2, authVersion: 0, role: 'organizer', organisateurId: 7, email: 'o@t', prenom: 'O', nom: 'O' };
+const admin: Actor = { userId: 1, authVersion: 0, role: 'admin', organisateurId: null, email: 'a@t', prenom: 'A', nom: 'A' };
 
 const statusOf = async (p: Promise<unknown>) => {
   try {

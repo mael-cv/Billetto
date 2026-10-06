@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import type { Actor } from '../../../auth/domain/actor';
-import { Authenticated, CurrentActor } from '../../../auth/presentation/auth.decorators';
+import { Authenticated, CurrentActor, OptionalAuth } from '../../../auth/presentation/auth.decorators';
 import { dateSchema, idSchema, moneySchema, text } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import { type Scope, scopeQuerySchema } from '../../events/presentation/events.dto';
@@ -46,6 +46,7 @@ export class PricingController {
   ) {}
 
   @Get('events/:id/prices')
+  @OptionalAuth()
   list(
     @CurrentActor() actor: Actor | null,
     @Param('id', new ZodPipe(idSchema)) eventId: number,

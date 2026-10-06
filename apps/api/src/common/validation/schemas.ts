@@ -3,7 +3,7 @@ import { z } from 'zod';
 /** Identifiant technique : entier strictement positif (bigint PostgreSQL ≤ 2^53). */
 export const idSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
-export const paginationSchema = z.object({
+export const paginationSchema = z.strictObject({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });

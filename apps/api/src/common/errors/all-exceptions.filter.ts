@@ -27,10 +27,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     body.requestId = request.id;
 
     if (body.statusCode >= 500) {
-      this.logger.error(
-        `${request.method} ${request.routeOptions?.url ?? ''} → ${body.statusCode} [${request.id}]`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      // Les erreurs de dépendances peuvent contenir SQL et données sensibles.
+      const kind = exception instanceof Error ? exception.constructor.name : 'UnknownError';
+      this.logger.error(`${request.method} ${request.routeOptions?.url ?? ''} → ${body.statusCode} [${request.id}] ${kind}`);
     }
     void reply.status(body.statusCode).send(body);
   }

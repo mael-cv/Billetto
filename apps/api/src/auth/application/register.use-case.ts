@@ -27,6 +27,6 @@ export class RegisterUseCase {
       prenom: command.prenom,
       nom: command.nom,
     });
-    return { userId, role: 'visitor', organisateurId: null, email, prenom: command.prenom, nom: command.nom };
+    return { userId, authVersion: 0, role: 'visitor', organisateurId: null, email, prenom: command.prenom, nom: command.nom };
   }
 }

@@ -44,5 +44,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     const details = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`);
     throw new Error(`Configuration invalide — ${details.join(' ; ')}`);
   }
+  if (result.data.NODE_ENV === 'production') {
+    if (!result.data.COOKIE_SECURE) throw new Error('COOKIE_SECURE doit être true en production');
+    if (new URL(result.data.CORS_ORIGIN).protocol !== 'https:') {
+      throw new Error('CORS_ORIGIN doit utiliser HTTPS en production');
+    }
+    if (/^(replace|remplacer|change-me|secret|password)/i.test(result.data.JWT_SECRET)) {
+      throw new Error('JWT_SECRET doit être remplacé par un secret aléatoire en production');
+    }
+  }
   return result.data;
 }

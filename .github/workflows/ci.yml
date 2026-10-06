@@ -13,6 +13,16 @@ permissions:
   contents: read
 
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository and history for secrets
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/path:ro" ghcr.io/gitleaks/gitleaks:v8.29.1 detect --source=/path --redact --no-banner
+
   # ---------------------------------------------------------------------------
   # Qualité du code : lint, types, tests unitaires, build (sans base de données)
   # ---------------------------------------------------------------------------

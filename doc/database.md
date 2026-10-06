@@ -48,6 +48,7 @@ erDiagram
 | 012 | Vues étendues : réservé / liste d'attente / taux d'occupation (phase 14) |
 | 013 | `evenements.delai_annulation`, `en_ligne`, `fuseau_horaire` ; `emails_sortants` (phase 15) |
 | 014 | `paiement_webhooks` + `traiter_paiement_webhook()` : idempotence des webhooks de paiement (phase 11, numérotée après la 15 car livrée plus tard) |
+| 015 | `utilisateurs.auth_version` et fonctions de changement de mot de passe / validation de version : révocation des sessions JWT |
 
 ## Normalisation
 - **1FN** : valeurs atomiques, pas de listes dans une cellule (pas de `tags = 'vip,concert'`).
