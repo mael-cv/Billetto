@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "infra:up": "docker compose up -d --wait postgres pgadmin",
+    "infra:up": "docker compose up -d --wait postgres pgadmin mailpit",
     "infra:down": "docker compose down",
     "dev": "pnpm -r --parallel --filter @billetto/web --filter @billetto/api dev",
     "build": "pnpm -r --filter @billetto/web --filter @billetto/api build",

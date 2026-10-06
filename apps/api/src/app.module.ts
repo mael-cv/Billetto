@@ -8,6 +8,7 @@ import { CheckinModule } from './modules/checkin/checkin.module';
 import { EventTypesModule } from './modules/event-types/event-types.module';
 import { EventsModule } from './modules/events/events.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PricingModule } from './modules/pricing/pricing.module';
@@ -37,6 +38,7 @@ export class AppModule {
         AnalyticsModule,
         WaitlistModule,
         CheckinModule,
+        NotificationsModule,
       ],
     };
   }

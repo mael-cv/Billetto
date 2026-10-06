@@ -26,6 +26,7 @@ interface TicketRow {
   commande_id: bigint;
   statut_commande: MyTicket['statutCommande'];
   qr_payload: string;
+  annulation_jusqua: Date | null;
 }
 
 @Injectable()
@@ -50,7 +51,8 @@ export class PrismaTicketsRepository implements TicketsRepository {
       tx.$queryRaw<TicketRow[]>`
         SELECT bu.billet_id, bu.code::text AS code, bu.evenement_id, bu.evenement, bu.debut, bu.lieu, bu.ville,
                bu.tarif, bu.prix_paye, bu.commande_id, bu.statut_commande,
-               'BT1.' || bu.code || '.' || b.code_verification AS qr_payload
+               'BT1.' || bu.code || '.' || b.code_verification AS qr_payload,
+               limite_annulation(bu.commande_id) AS annulation_jusqua
         FROM billets_utilisateur(${userId}::bigint) bu
         -- RLS : le visiteur ne lit que ses propres billets, donc sa propre signature.
         JOIN billets b ON b.id = bu.billet_id
@@ -70,6 +72,7 @@ export class PrismaTicketsRepository implements TicketsRepository {
       commandeId: toNumber(t.commande_id),
       statutCommande: t.statut_commande,
       qrPayload: t.qr_payload,
+      annulationPossibleJusqua: t.annulation_jusqua,
     }));
     return { items, total: toNumber(countRows[0]?.total) };
   }
