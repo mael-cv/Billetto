@@ -48,7 +48,7 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `012_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [ ] Migration `013_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
 - [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
 - [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
 - [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé
@@ -73,10 +73,10 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [ ] Test manuel mobile en mode avion (scan → reconnexion → sync), vérifier absence de doublon
 
 ## Phase 14 — Dashboard temps réel par collectif
-- [ ] Étendre les vues existantes (ventes/remplissage) avec colonnes "réservé" et "en liste d'attente" (ajout en fin de liste)
-- [ ] API : `GET /analytics/live` en polling court (5-10s), isolation via RLS (phase 09)
-- [ ] Front : extension `OrganizerDashboard` (vendu / réservé / en liste d'attente, rafraîchissement automatique)
-- [ ] Test : isolation multi-tenant du flux, cohérence des chiffres sous charge
+- [x] Étendre les vues existantes (ventes/remplissage) avec colonnes "réservé" et "en liste d'attente" (ajout en fin de liste) — migration `012_dashboard_live.sql` : `billets_reserves`, `places_liste_attente`, `taux_occupation` (vues toujours `security_invoker`)
+- [x] API : `GET /analytics/live` en polling court (5-10s), isolation via RLS (phase 09) — `Cache-Control: no-store`, front à 5 s
+- [x] Front : extension `OrganizerDashboard` (vendu / réservé / en liste d'attente, rafraîchissement automatique) — section « En direct » (`components/LiveDashboard.tsx`), jauge vendu/réservé, pause du polling onglet masqué
+- [x] Test : isolation multi-tenant du flux, cohérence des chiffres sous charge — `database/tests/phase14_dashboard.sql` (RLS organisateur A/B), test 10 de `concurrency.mjs` (30 lectures pendant 40 achats/holds), e2e `dashboard live`
 
 ## Phase 15 — Souhaits secondaires
 - [ ] Annulation self-service : délai configurable, appel autorisé depuis le compte utilisateur (pas seulement organisateur/admin)

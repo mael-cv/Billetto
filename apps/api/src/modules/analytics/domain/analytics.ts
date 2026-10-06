@@ -65,6 +65,27 @@ export interface PriceAuditEntry {
 export const EVENT_SALES_SORTS = ['ca', 'billets', 'taux', 'date'] as const;
 export type EventSalesSort = (typeof EVENT_SALES_SORTS)[number];
 
+/** Dashboard temps réel : un événement publié à venir. */
+export interface LiveEvent {
+  evenementId: number;
+  nom: string;
+  debut: Date;
+  places: number;
+  vendus: number;
+  /** Holds actifs non expirés, offres de liste d'attente comprises. */
+  reserves: number;
+  /** Places demandées par les inscrits encore en attente. */
+  enAttente: number;
+  tauxOccupation: number | null;
+  chiffreAffaires: string;
+}
+
+export interface LiveDashboard {
+  generatedAt: Date;
+  totaux: { places: number; vendus: number; reserves: number; enAttente: number; chiffreAffaires: string };
+  evenements: LiveEvent[];
+}
+
 export interface AnalyticsRepository {
   /** Organisateur : vues security_invoker filtrées par RLS. */
   summaryFromViews(tx: Tx): Promise<SalesSummary>;
@@ -75,6 +96,8 @@ export interface AnalyticsRepository {
   dailySalesFromMaterializedView(tx: Tx, from: Date, to: Date): Promise<DailySales[]>;
   dailySalesFromTables(tx: Tx, from: Date, to: Date): Promise<DailySales[]>;
   recentOrders(tx: Tx, limit: number): Promise<RecentOrder[]>;
+  /** Événements publiés à venir (v_remplissage, RLS) : vendu / réservé / en liste d'attente. */
+  live(tx: Tx, limit: number): Promise<LiveEvent[]>;
   /** Rôle admin attendu (journal_tarifs). */
   priceAudit(tx: Tx, limit: number): Promise<PriceAuditEntry[]>;
 }
