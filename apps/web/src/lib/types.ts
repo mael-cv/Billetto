@@ -249,3 +249,24 @@ export interface CheckinManifestEntry {
   dejaScanne: boolean;
   scanneA: string | null;
 }
+
+/** Dashboard temps réel (GET /analytics/live), filtré par RLS. */
+export interface LiveEvent {
+  evenementId: number;
+  nom: string;
+  debut: string;
+  places: number;
+  vendus: number;
+  /** Holds actifs non expirés, offres de liste d'attente comprises. */
+  reserves: number;
+  /** Places demandées par les inscrits encore en attente. */
+  enAttente: number;
+  tauxOccupation: number | null;
+  chiffreAffaires: string;
+}
+
+export interface LiveDashboard {
+  generatedAt: string;
+  totaux: { places: number; vendus: number; reserves: number; enAttente: number; chiffreAffaires: string };
+  evenements: LiveEvent[];
+}
