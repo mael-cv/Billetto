@@ -26,3 +26,6 @@ logs/
 /CLAUDE.md
 /AGENTS.md
 /docs/
+
+# Rapports générés par security-audit (artefacts régénérés à chaque run)
+doc/security-audit/
