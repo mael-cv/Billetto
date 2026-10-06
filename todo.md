@@ -47,13 +47,12 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test de concurrence (adapter `database/scripts/concurrency.mjs`) : N holds simultanÃ©s sur tarif Ã  quota fixe, zÃ©ro survente
 - [x] Test : hold expirÃ© ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloquÃ© par des holds actifs ; purge sans effet sur les holds actifs
 
-## Phase 11 â€” Idempotence webhook paiement
-- [ ] Migration `013_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
-- [ ] Endpoint `POST /payments/webhook` avec vÃ©rification de signature prestataire (guard dÃ©diÃ©, distinct des guards par session)
-- [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement mÃ©tier dans la mÃªme transaction que l'insertion d'idempotence
-- [ ] Test : envoi du mÃªme Ã©vÃ©nement webhook deux fois en parallÃ¨le â†’ un seul billet crÃ©Ã©
-- [ ] Test : signature invalide rejetÃ©e
-
+## Phase 11 — Idempotence webhook paiement
+- [x] Migration `013_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [x] Endpoint `POST /payments/webhook` : garde HMAC-SHA256 dédiée, sans session ; corps brut signé, secret `PAYMENTS_WEBHOOK_SECRET`
+- [x] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
+- [x] Test : envoi du même événement webhook 40 fois en parallèle ? un seul billet créé (`concurrency.mjs`)
+- [x] Test : signature invalide rejetée, signature valide confirme la réservation une seule fois (unitaires + e2e)
 ## Phase 12 â€” Liste d'attente
 - [x] Migration `010_liste_attente.sql` : table `liste_attente` (`tarif_id, utilisateur_id, quantite_souhaitee, statut, notifie_a, expire_a`)
 - [x] Fonction `notifier_prochain_en_attente(tarif_id)` avec `FOR UPDATE SKIP LOCKED`, FIFO par `created_at` â€” offre = rÃ©servation Ã  TTL 30 min (rÃ©utilise `places_occupees` et `confirmer_reservation`)
