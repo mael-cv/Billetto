@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { startOfToday, useQueryParams } from "../lib/hooks";
-import { ApiError } from "../lib/http";
+import { ApiError, errorMessage } from "../lib/http";
 import { formatDate, formatEUR, formatTime } from "../lib/format";
 import {
   attributeLabel,
@@ -13,7 +13,7 @@ import {
   STATUS_LABEL,
   tierAvailability,
 } from "../lib/presentation";
-import { keys, useEvents } from "../lib/queries";
+import { keys, useEvents, useMyWaitlist } from "../lib/queries";
 import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
 import type { EventDetail, Scope, TicketPrice } from "../lib/types";
@@ -54,6 +54,7 @@ function PriceCard({
         {buyable && tier.restantes >= 20 && (
           <p className="mt-0.5 text-sm text-muted-foreground">{tier.restantes} places restantes</p>
         )}
+        {availability === "epuise" && <WaitlistAction tarifId={tier.id} />}
       </div>
       <div className="flex items-center gap-3">
         <span className="font-display font-bold tabular-nums">{formatEUR(tier.prix)}</span>
@@ -64,6 +65,67 @@ function PriceCard({
           max={Math.min(MAX_PAR_COMMANDE, Math.max(tier.restantes, 0))}
         />
       </div>
+    </div>
+  );
+}
+
+// Tarif épuisé : inscription en liste d'attente (1 place), ou état de l'inscription.
+function WaitlistAction({ tarifId }: { tarifId: number }) {
+  const { user } = useAuth();
+  const { navigate } = useRouter();
+  const { toast } = useStore();
+  const queryClient = useQueryClient();
+  const mine = useMyWaitlist(!!user);
+  const entry = mine.data?.find((e) => e.tarifId === tarifId && (e.statut === "en_attente" || e.statut === "notifiee"));
+  const join = useMutation({
+    mutationFn: () => api.joinWaitlist(tarifId, 1),
+    onSuccess: (e) => {
+      toast(`Inscrit en liste d'attente${e.position ? ` (position n° ${e.position})` : ""}`, "success");
+      void queryClient.invalidateQueries({ queryKey: keys.myWaitlist });
+    },
+    onError: (error) => toast(errorMessage(error), "error"),
+  });
+
+  if (entry?.statut === "notifiee")
+    return (
+      <Link to="/waitlist" className="mt-1 inline-block text-sm font-medium text-primary hover:underline">
+        Une place vous attend : confirmer
+      </Link>
+    );
+  if (entry)
+    return (
+      <p className="mt-1 text-sm text-muted-foreground">
+        En liste d'attente{entry.position ? ` · position n° ${entry.position}` : ""}
+      </p>
+    );
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="mt-2"
+      disabled={join.isPending}
+      onClick={() => (user ? join.mutate() : navigate("/login"))}
+      data-testid={`waitlist-join-${tarifId}`}
+    >
+      S'inscrire en liste d'attente
+    </Button>
+  );
+}
+
+// Organisateur : file d'attente d'un tarif (sans donnée personnelle).
+function TarifQueue({ tarifId, nom }: { tarifId: number; nom: string }) {
+  const query = useQuery({ queryKey: keys.tarifWaitlist(tarifId), queryFn: () => api.tarifWaitlist(tarifId) });
+  const items = query.data ?? [];
+  const waiting = items.filter((i) => i.statut === "en_attente");
+  const offers = items.filter((i) => i.statut === "notifiee");
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 text-sm">
+      <span className="font-medium">{nom}</span>
+      <span className="text-muted-foreground">
+        {query.isLoading
+          ? "…"
+          : `${waiting.reduce((n, i) => n + i.quantite, 0)} place(s) demandée(s) · ${offers.length} offre(s) en cours`}
+      </span>
     </div>
   );
 }
@@ -292,7 +354,19 @@ export function EventDetailPage({ slug }: { slug: string }) {
           </div>
 
           <aside className="hidden lg:block">
-            <div className="sticky top-24">{purchasePanel}</div>
+            <div className="sticky top-24 space-y-4">
+              {purchasePanel}
+              {isOwner && event.tarifs.length > 0 && (
+                <Card className="p-5">
+                  <h3 className="font-display font-bold">Listes d'attente</h3>
+                  <div className="mt-2 divide-y divide-border">
+                    {event.tarifs.map((t) => (
+                      <TarifQueue key={t.id} tarifId={t.id} nom={t.nom} />
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </div>
           </aside>
 
           <div className="lg:hidden">{purchasePanel}</div>

@@ -24,6 +24,8 @@ import type {
   TicketPrice,
   User,
   Venue,
+  WaitlistEntry,
+  WaitlistQueueItem,
 } from "./types";
 
 export type EventSort = "date" | "-date" | "prix" | "nom";
@@ -100,6 +102,14 @@ export const api = {
   order: (id: number) => http<OrderDetail>("GET", `/orders/${id}`),
   orderPayments: (id: number) => http<Payment[]>("GET", `/orders/${id}/payments`),
   refund: (id: number) => http<OrderDetail>("POST", `/orders/${id}/refund`),
+
+  // Liste d'attente : une offre (statut notifiee) est une réservation à confirmer avant expireA.
+  joinWaitlist: (tarifId: number, quantite: number) =>
+    http<WaitlistEntry>("POST", "/waitlist", { body: { tarifId, quantite } }),
+  myWaitlist: () => http<WaitlistEntry[]>("GET", "/waitlist/me"),
+  confirmWaitlist: (id: number) => http<PurchaseResult>("POST", `/waitlist/${id}/confirm`),
+  cancelWaitlist: (id: number) => http<void>("DELETE", `/waitlist/${id}`),
+  tarifWaitlist: (tarifId: number) => http<WaitlistQueueItem[]>("GET", `/waitlist/tarifs/${tarifId}`),
 
   // Statistiques
   summary: () => http<SalesSummary>("GET", "/analytics/summary"),

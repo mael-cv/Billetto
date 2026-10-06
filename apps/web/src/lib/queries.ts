@@ -11,6 +11,8 @@ export const keys = {
   venues: (ville?: string) => ["venues", ville ?? ""] as const,
   myTickets: ["me", "tickets"] as const,
   myOrders: ["me", "orders"] as const,
+  myWaitlist: ["me", "waitlist"] as const,
+  tarifWaitlist: (tarifId: number) => ["waitlist", "tarif", tarifId] as const,
   order: (id: number) => ["order", id] as const,
   analytics: (name: string, ...args: unknown[]) => ["analytics", name, ...args] as const,
   users: (q: string, page: number) => ["users", q, page] as const,
@@ -29,3 +31,7 @@ export function useRootTypes() {
   const tree = useEventTypes();
   return { ...tree, data: tree.data?.filter((t) => t.parentId === null) };
 }
+
+// Polling : une offre de liste d'attente n'est « notifiée » que par son statut.
+export const useMyWaitlist = (enabled: boolean) =>
+  useQuery({ queryKey: keys.myWaitlist, queryFn: api.myWaitlist, enabled, refetchInterval: 30_000 });
