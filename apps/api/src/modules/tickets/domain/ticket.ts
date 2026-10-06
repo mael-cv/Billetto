@@ -12,6 +12,8 @@ export interface PurchaseResult {
 export interface MyTicket extends OrderTicket {
   commandeId: number;
   statutCommande: 'pending' | 'paid' | 'cancelled' | 'refunded';
+  /** Contenu du QR de check-in : BT1.<code>.<signature HMAC> (vérifié par scanner_billet). */
+  qrPayload: string;
 }
 
 export interface TicketsRepository {

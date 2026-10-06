@@ -48,7 +48,7 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `011_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [ ] Migration `012_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
 - [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
 - [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
 - [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé
@@ -63,13 +63,13 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : désistement notifie le bon utilisateur (FIFO strict), non-réponse passe au suivant, pas de fuite de place — `database/tests/phase12_liste_attente.sql`, test 8 de `concurrency.mjs`, scénario e2e `liste d’attente`
 
 ## Phase 13 — Check-in QR avec détection de doublon, offline-first
-- [ ] Migration `011_checkin.sql` : colonne `billets.code_verification` (token signé) si absente
-- [ ] Table `billets_scans` avec `client_scan_id UNIQUE` (idempotence des rejeux offline)
-- [ ] Index unique partiel `UNIQUE (billet_id) WHERE resultat = 'ok'` (détection de doublon garantie en DB)
-- [ ] Nouveau module API `checkin` : `POST /checkin/scan`, `POST /checkin/scan/batch`, `GET /checkin/manifest`
-- [ ] Front mobile-first : écran `/checkin`, scan caméra, file locale offline, sync en arrière-plan, retour visuel net
-- [ ] Test : scan du même billet deux fois → deuxième rejeté avec info du premier
-- [ ] Test : scans hors ligne rejoués dans le désordre → idempotence garantie par `client_scan_id`
+- [x] Migration `011_checkin.sql` : colonne `billets.code_verification` (token signé) si absente — HMAC-SHA256 calculé en base (secret dans `checkin_secret`, sans GRANT), QR `BT1.<code>.<signature>`
+- [x] Table `billets_scans` avec `client_scan_id UNIQUE` (idempotence des rejeux offline)
+- [x] Index unique partiel `UNIQUE (billet_id) WHERE resultat = 'ok'` (détection de doublon garantie en DB)
+- [x] Nouveau module API `checkin` : `POST /checkin/scan`, `POST /checkin/scan/batch`, `GET /checkin/manifest` — lots : une transaction par scan
+- [x] Front mobile-first : écran `/checkin`, scan caméra, file locale offline, sync en arrière-plan, retour visuel net — `BarcodeDetector` + saisie manuelle en repli, `lib/checkinQueue.ts`, `pnpm --filter @billetto/web dev:https` pour mobile
+- [x] Test : scan du même billet deux fois → deuxième rejeté avec info du premier — `database/tests/phase13_checkin.sql`, e2e `check-in`, test 9 de `concurrency.mjs` (40 scans simultanés → 1 ok)
+- [x] Test : scans hors ligne rejoués dans le désordre → idempotence garantie par `client_scan_id` — SQL + e2e (lot B, A puis A, B, A)
 - [ ] Test manuel mobile en mode avion (scan → reconnexion → sync), vérifier absence de doublon
 
 ## Phase 14 — Dashboard temps réel par collectif

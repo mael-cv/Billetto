@@ -17,6 +17,9 @@
 //   8. Phase 12 : une place se libère (hold expiré, aucun événement) et N
 //      sessions appellent traiter_liste_attente en même temps : une seule
 //      offre, pour la tête de file (FIFO strict).
+//   9. Phase 13 : N sessions scannent le même billet (client_scan_id
+//      distincts) → exactement 1 'ok' ; N sessions rejouent le même
+//      client_scan_id → 1 seule ligne.
 //
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
@@ -190,6 +193,21 @@ try {
     `  ${offres.length} offre(s) émise(s) (utilisateur ${offres.join(', ') || '-'}, tête = ${attendants[0]}), ${restantsAttente} place restante`,
   );
 
+  console.log(`» phase 13 : ${N} scans simultanés du même billet`);
+  const qr = q(`SELECT 'BT1.' || code || '.' || code_verification FROM billets WHERE tarif_id = ${tVerrou} ORDER BY id LIMIT 1`);
+  const scans = parallel(`SELECT resultat FROM scanner_billet(gen_random_uuid(), '${qr}', ${evt})`);
+  const [scansOk, scansDoublon] = q(
+    `SELECT count(*) FILTER (WHERE resultat = 'ok') || ' ' || count(*) FILTER (WHERE resultat = 'doublon')
+     FROM billets_scans WHERE evenement_id = ${evt}`,
+  )
+    .split(/\s+/)
+    .map(Number);
+  const rejeuId = q(`SELECT gen_random_uuid()`);
+  const qr2 = q(`SELECT 'BT1.' || code || '.' || code_verification FROM billets WHERE tarif_id = ${tVerrou} ORDER BY id OFFSET 1 LIMIT 1`);
+  const rejeux = parallel(`SELECT resultat FROM scanner_billet('${rejeuId}', '${qr2}', ${evt})`);
+  const lignesRejeu = Number(q(`SELECT count(*) FROM billets_scans WHERE client_scan_id = '${rejeuId}'`));
+  console.log(`  ${scansOk} ok, ${scansDoublon} doublon(s) ; même client_scan_id rejoué ${N} fois : ${lignesRejeu} ligne`);
+
   const checks = [
     [avecVerrou.other.length === 0, `erreurs inattendues : ${avecVerrou.other.join(' | ')}`],
     [avecVerrou.ok === QUOTA, `acheter_billet : ${QUOTA} succès attendus, ${avecVerrou.ok}`],
@@ -209,6 +227,9 @@ try {
     [balayages.other.length === 0, `traiter_liste_attente : erreurs inattendues : ${balayages.other.join(' | ')}`],
     [offres.length === 1 && offres[0] === attendants[0], `liste d'attente : 1 offre pour la tête attendue, ${offres.join(', ')}`],
     [restantsAttente === 0, `liste d'attente : la place offerte doit être bloquée, ${restantsAttente} restante(s)`],
+    [scans.other.length === 0 && rejeux.other.length === 0, `scanner_billet : erreurs inattendues : ${[...scans.other, ...rejeux.other].join(' | ')}`],
+    [scansOk === 1 && scansDoublon === N - 1, `check-in : 1 ok / ${N - 1} doublons attendus, ${scansOk} / ${scansDoublon}`],
+    [lignesRejeu === 1, `check-in : 1 ligne attendue pour un client_scan_id rejoué, ${lignesRejeu}`],
     [expirees === QUOTA && actives === 1, `purge : ${QUOTA} expirés / 1 actif attendus, ${expirees} / ${actives}`],
   ];
   for (const [ok, msg] of checks) {
@@ -221,10 +242,12 @@ try {
     console.log(`✓ aucune survente avec verrou ; survente reproduite sans verrou (${vendusNaif}/${QUOTA})`);
     console.log(`✓ aucune survente sur les holds concurrents ; hold expiré libère le quota (expiration lazy)`);
     console.log(`✓ achat direct bloqué par les holds actifs ; purge = reporting uniquement`);
+    console.log(`✓ check-in : un seul scan ok malgré ${N} scans simultanés ; rejeux idempotents`);
     console.log(`✓ liste d'attente : une seule offre, à la tête de file, malgré ${N} balayages concurrents`);
   }
 } finally {
   q(`
+    DELETE FROM billets_scans WHERE evenement_id = ${evt};
     DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM reservations WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM paiements WHERE commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user});

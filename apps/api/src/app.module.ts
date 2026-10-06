@@ -4,6 +4,7 @@ import type { AppConfig } from './common/config/config';
 import { ConfigModule } from './common/config/config.module';
 import { DatabaseModule } from './common/database/database.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { CheckinModule } from './modules/checkin/checkin.module';
 import { EventTypesModule } from './modules/event-types/event-types.module';
 import { EventsModule } from './modules/events/events.module';
 import { HealthModule } from './modules/health/health.module';
@@ -35,6 +36,7 @@ export class AppModule {
         UsersModule,
         AnalyticsModule,
         WaitlistModule,
+        CheckinModule,
       ],
     };
   }

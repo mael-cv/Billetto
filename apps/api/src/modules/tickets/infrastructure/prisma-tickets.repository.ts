@@ -25,6 +25,7 @@ interface TicketRow {
   prix_paye: Prisma.Decimal;
   commande_id: bigint;
   statut_commande: MyTicket['statutCommande'];
+  qr_payload: string;
 }
 
 @Injectable()
@@ -47,9 +48,13 @@ export class PrismaTicketsRepository implements TicketsRepository {
     const [countRows, rows] = await Promise.all([
       tx.$queryRaw<{ total: bigint }[]>`SELECT count(*) AS total FROM billets_utilisateur(${userId}::bigint)`,
       tx.$queryRaw<TicketRow[]>`
-        SELECT billet_id, code::text AS code, evenement_id, evenement, debut, lieu, ville, tarif,
-               prix_paye, commande_id, statut_commande
-        FROM billets_utilisateur(${userId}::bigint)
+        SELECT bu.billet_id, bu.code::text AS code, bu.evenement_id, bu.evenement, bu.debut, bu.lieu, bu.ville,
+               bu.tarif, bu.prix_paye, bu.commande_id, bu.statut_commande,
+               'BT1.' || bu.code || '.' || b.code_verification AS qr_payload
+        FROM billets_utilisateur(${userId}::bigint) bu
+        -- RLS : le visiteur ne lit que ses propres billets, donc sa propre signature.
+        JOIN billets b ON b.id = bu.billet_id
+        ORDER BY bu.debut DESC, bu.billet_id
         LIMIT ${pagination.pageSize} OFFSET ${offsetOf(pagination)}`,
     ]);
     const items: MyTicket[] = rows.map((t) => ({
@@ -64,6 +69,7 @@ export class PrismaTicketsRepository implements TicketsRepository {
       prixPaye: toMoney(t.prix_paye),
       commandeId: toNumber(t.commande_id),
       statutCommande: t.statut_commande,
+      qrPayload: t.qr_payload,
     }));
     return { items, total: toNumber(countRows[0]?.total) };
   }

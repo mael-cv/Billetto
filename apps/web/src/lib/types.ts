@@ -114,6 +114,8 @@ export interface OrderTicket {
 export interface MyTicket extends OrderTicket {
   commandeId: number;
   statutCommande: OrderStatus;
+  /** Contenu du QR de check-in (BT1.<code>.<signature>). */
+  qrPayload: string;
 }
 
 export interface OrderSummary {
@@ -217,4 +219,33 @@ export interface WaitlistEntry extends WaitlistQueueItem {
   tarif: string;
   evenementId: number;
   evenement: string;
+}
+
+export type ScanResult = "ok" | "doublon" | "invalide" | "annule" | "mauvais_evenement";
+
+export interface ScanOutcome {
+  scanId: number;
+  clientScanId: string;
+  resultat: ScanResult;
+  /** Scan déjà reçu par le serveur : réponse d'origine renvoyée. */
+  rejeu: boolean;
+  billetId: number | null;
+  tarif: string | null;
+  titulaire: string | null;
+  scanneA: string;
+  recuA: string;
+  premierScan: { scanneA: string; recuA: string; appareil: string | null } | null;
+}
+
+export type ScanBatchItem =
+  | ({ status: "done" } & ScanOutcome)
+  | { status: "error"; clientScanId: string; error: string; message: string };
+
+export interface CheckinManifestEntry {
+  billetId: number;
+  codeVerification: string;
+  tarif: string;
+  titulaire: string;
+  dejaScanne: boolean;
+  scanneA: string | null;
 }
