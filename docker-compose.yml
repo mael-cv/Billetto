@@ -18,6 +18,13 @@ services:
       timeout: 5s
       retries: 20
 
+  # SMTP de développement : capture tous les e-mails (interface web :8025).
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   pgadmin:
     image: dpage/pgadmin4:9
     environment:

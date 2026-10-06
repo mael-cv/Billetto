@@ -3,8 +3,8 @@ import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { errorMessage } from "../lib/http";
-import { formatDate, formatTime } from "../lib/format";
-import { eventImage } from "../lib/presentation";
+import { formatDate, formatDateTime, formatTime } from "../lib/format";
+import { cancellationOpen, eventImage } from "../lib/presentation";
 import { keys } from "../lib/queries";
 import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
@@ -28,6 +28,24 @@ function TicketQr({ payload, code }: { payload: string; code: string }) {
   return (
     <div className="size-28 shrink-0 rounded-[10px] bg-white p-1.5" data-testid="ticket-qr">
       {src && <img src={src} alt={`QR du billet ${code}`} className="size-full [image-rendering:pixelated]" />}
+    </div>
+  );
+}
+
+function CancelAction({ t, onRefund, refunding }: { t: MyTicket; onRefund: () => void; refunding: boolean }) {
+  const open = cancellationOpen(t);
+  return (
+    <div className="mt-3">
+      <Button variant="danger" size="sm" onClick={onRefund} loading={refunding} disabled={!open}>
+        Annuler et rembourser
+      </Button>
+      {t.annulationPossibleJusqua && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {open
+            ? `Annulation possible jusqu'au ${formatDateTime(t.annulationPossibleJusqua)}`
+            : `Délai d'annulation dépassé depuis le ${formatDateTime(t.annulationPossibleJusqua)}`}
+        </p>
+      )}
     </div>
   );
 }
@@ -75,11 +93,7 @@ function TicketCard({ t, onRefund, refunding }: { t: MyTicket; onRefund: () => v
               </div>
             </div>
             <div className="mt-3 font-mono text-xs text-muted-foreground">{t.code}</div>
-            {state === "valide" && (
-              <Button variant="danger" size="sm" className="mt-3" onClick={onRefund} loading={refunding}>
-                Rembourser la commande
-              </Button>
-            )}
+            {state === "valide" && <CancelAction t={t} onRefund={onRefund} refunding={refunding} />}
           </div>
           {state === "valide" && <TicketQr payload={t.qrPayload} code={t.code} />}
         </div>
@@ -113,7 +127,7 @@ export function TicketsPage() {
 
   const askRefund = (t: MyTicket) => {
     const count = all.filter((x) => x.commandeId === t.commandeId).length;
-    if (window.confirm(`Rembourser la commande n° ${t.commandeId} (${count} billet${count > 1 ? "s" : ""}) ?`)) {
+    if (window.confirm(`Annuler et rembourser la commande n° ${t.commandeId} (${count} billet${count > 1 ? "s" : ""}) ?`)) {
       refund.mutate(t.commandeId);
     }
   };

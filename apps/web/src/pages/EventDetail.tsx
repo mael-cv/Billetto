@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { startOfToday, useQueryParams } from "../lib/hooks";
 import { ApiError, errorMessage } from "../lib/http";
-import { formatDate, formatEUR, formatTime } from "../lib/format";
+import { eventTimeZone, formatDate, formatEUR, formatEventTime, formatTime } from "../lib/format";
 import {
   attributeLabel,
   attributeValue,
@@ -291,9 +291,13 @@ export function EventDetailPage({ slug }: { slug: string }) {
           <div>
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                [<IconCalendar key="c" className="size-5" />, "Date", formatDate(event.debut)],
-                [<IconClock key="t" className="size-5" />, "Horaires", `${formatTime(event.debut)} – ${formatTime(event.fin)}`],
-                [<IconPin key="p" className="size-5" />, "Lieu", `${event.lieu.nom}, ${event.lieu.ville}`],
+                [<IconCalendar key="c" className="size-5" />, "Date", formatDate(event.debut, eventTimeZone(event))],
+                [
+                  <IconClock key="t" className="size-5" />,
+                  "Horaires",
+                  `${formatEventTime(event.debut, event)} – ${formatTime(event.fin, eventTimeZone(event))}`,
+                ],
+                [<IconPin key="p" className="size-5" />, "Lieu", event.enLigne ? "En ligne" : `${event.lieu.nom}, ${event.lieu.ville}`],
               ].map(([icon, label, value], i) => (
                 <div key={i} className="flex items-center gap-3 rounded-[12px] border border-border bg-card p-3.5">
                   <span className="text-primary">{icon}</span>

@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "infra:up": "docker compose up -d --wait postgres pgadmin",
+    "infra:up": "docker compose up -d --wait postgres pgadmin mailpit",
     "infra:down": "docker compose down",
     "dev": "pnpm -r --parallel --filter @billetto/web --filter @billetto/api dev",
     "build": "pnpm -r --filter @billetto/web --filter @billetto/api build",
@@ -20,6 +20,7 @@
     "db:benchmark": "pnpm --filter @billetto/database benchmark",
     "db:seed:demo": "pnpm --filter @billetto/database seed:demo",
     "test:e2e": "pnpm --filter @billetto/api test:e2e",
+    "test:load": "pnpm --filter @billetto/api test:load",
     "test:e2e:web": "pnpm --filter @billetto/web test:e2e"
   },
   "devDependencies": {
