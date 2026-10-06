@@ -29,6 +29,7 @@ export class PrismaCredentialsRepository implements CredentialsRepository {
     if (!row) return null;
     return {
       userId: toNumber(row.utilisateur_id),
+      authVersion: (await this.sessionVersion(toNumber(row.utilisateur_id))) ?? 0,
       passwordHash: row.password_hash,
       role: row.role_app,
       organisateurId: toNullableNumber(row.organisateur_id),
@@ -41,5 +42,17 @@ export class PrismaCredentialsRepository implements CredentialsRepository {
     const rows = await this.db.raw().$queryRaw<{ id: bigint }[]>`
       SELECT inscrire_utilisateur(${account.email}, ${account.passwordHash}, ${account.prenom}, ${account.nom}) AS id`;
     return toNumber(rows[0]?.id);
+  }
+
+  async changePassword(userId: number, passwordHash: string): Promise<void> {
+    await this.db.run({ userId, role: 'visitor' }, async (tx) => {
+      await tx.$queryRaw`SELECT changer_mot_de_passe(${userId}::bigint, ${passwordHash})`;
+    });
+  }
+
+  async sessionVersion(userId: number): Promise<number | null> {
+    const rows = await this.db.raw().$queryRaw<{ version: number | null }[]>`
+      SELECT version FROM version_session_utilisateur(${userId}::bigint)`;
+    return rows[0]?.version ?? null;
   }
 }

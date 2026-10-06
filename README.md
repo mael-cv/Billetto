@@ -33,7 +33,7 @@ Seed volumineux pour les benchmarks (1,8 M de billets) :
 pnpm db:seed:full
 ```
 
-Stack complète en conteneurs : `docker compose up -d --wait`.
+Stack complète en conteneurs : `docker compose up -d --wait`. Compose utilise le profil local (`NODE_ENV=development`, site HTTP sur `localhost:3000`, cookies non-Secure). En production, définissez explicitement `NODE_ENV=production`, `CORS_ORIGIN=https://<domaine-du-frontend>` et `COOKIE_SECURE=true` derrière un reverse proxy TLS ; ne réutilisez pas les valeurs locales.
 
 ## Services
 
@@ -108,6 +108,10 @@ doc/            documentation et phases
 - [Base de données](doc/database.md)
 - [Performance](doc/performance.md)
 - [Sécurité](doc/security.md)
+- [Prompt d’audit général de sécurité](doc/prompt-audit-securite.md) — revue en lecture seule à lancer avant toute modification
+- [Analyse d’architecture orientée sécurité](doc/analyse-architecture-securite.md) — frontières de confiance et invariants à préserver lors d’une évolution
+- [Autorisation et RBAC](doc/authorization-rbac.md) — accès fermé par défaut, rôles API et isolation par ressource
+- [Sécurité de l’API](doc/api-security.md) — contrôles serveur indépendants du frontend et limites de déploiement
 - [API](doc/api.md)
 - [Décisions](doc/decisions.md)
 

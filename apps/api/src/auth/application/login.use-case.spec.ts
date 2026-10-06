@@ -5,6 +5,7 @@ import { LoginUseCase } from './login.use-case';
 
 const stored: StoredCredentials = {
   userId: 5,
+  authVersion: 0,
   passwordHash: 'hash-correct',
   role: 'organizer',
   organisateurId: 3,
@@ -16,6 +17,8 @@ function setup(found: StoredCredentials | null) {
   const repo: CredentialsRepository = {
     findByEmail: jest.fn().mockResolvedValue(found),
     create: jest.fn(),
+    changePassword: jest.fn(),
+    sessionVersion: jest.fn().mockResolvedValue(found?.authVersion ?? null),
   };
   const hasher: PasswordHasher = {
     hash: jest.fn(),
@@ -38,7 +41,7 @@ describe('LoginUseCase', () => {
     const { useCase, repo } = setup(stored);
     const actor = await useCase.execute('  Hugo@Billetto.TEST ', 'secret');
     expect(repo.findByEmail).toHaveBeenCalledWith('hugo@billetto.test');
-    expect(actor).toEqual({ userId: 5, role: 'organizer', organisateurId: 3, email: 'hugo@billetto.test', prenom: 'Hugo', nom: 'Test' });
+    expect(actor).toEqual({ userId: 5, authVersion: 0, role: 'organizer', organisateurId: 3, email: 'hugo@billetto.test', prenom: 'Hugo', nom: 'Test' });
   });
 
   it('mauvais mot de passe → 401 générique', async () => {

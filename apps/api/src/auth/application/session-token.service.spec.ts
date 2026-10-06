@@ -6,6 +6,7 @@ import { SessionTokenService } from './session-token.service';
 const config = { JWT_SECRET: 'x'.repeat(48), SESSION_TTL_SECONDS: 3600 } as AppConfig;
 const actor: Actor = {
   userId: 42,
+  authVersion: 0,
   role: 'organizer',
   organisateurId: 7,
   email: 'a@b.test',
@@ -30,7 +31,7 @@ describe('SessionTokenService', () => {
 
   it('refuse un payload modifié (élévation de rôle)', () => {
     const [h, , s] = service.sign(actor, now).split('.');
-    const forged = b64({ sub: 42, role: 'admin', org: null, email: 'a@b.test', prenom: 'A', nom: 'B', iat: 0, exp: 9e9 });
+    const forged = b64({ sub: 42, ver: 0, role: 'admin', org: null, email: 'a@b.test', prenom: 'A', nom: 'B', iat: 0, exp: 9e9 });
     expect(service.verify(`${h}.${forged}.${s}`, now)).toBeNull();
   });
 
@@ -46,7 +47,7 @@ describe('SessionTokenService', () => {
 
   it('refuse un payload valide cryptographiquement mais mal formé', () => {
     const header = b64({ alg: 'HS256', typ: 'JWT' });
-    const payload = b64({ sub: 'not-a-number', role: 'root', exp: 9e9 });
+    const payload = b64({ sub: 'not-a-number', ver: 0, role: 'root', exp: 9e9 });
     const sig = createHmac('sha256', config.JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
     expect(service.verify(`${header}.${payload}.${sig}`, now)).toBeNull();
   });
