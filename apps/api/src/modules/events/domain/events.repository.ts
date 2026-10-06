@@ -1,6 +1,6 @@
 import type { Tx } from '../../../common/database/db-context.service';
 import type { Pagination } from '../../../common/validation/schemas';
-import type { EventDetail, EventFilters, EventInput, EventSummary } from './event';
+import type { EventDetail, EventFilters, EventInput, EventSummary, Participant } from './event';
 
 /**
  * Toutes les méthodes reçoivent une transaction dont le rôle PostgreSQL et
@@ -15,6 +15,8 @@ export interface EventsRepository {
   delete(tx: Tx, id: number): Promise<number>;
   /** Remplace les attributs (EAV) ; valeurs validées par trg_evenement_attributs_validate (BT020). */
   replaceAttributes(tx: Tx, id: number, attributes: { cle: string; valeur: string }[]): Promise<void>;
+  /** participants_evenement : organisateur de l'événement ou admin (BT013 sinon). */
+  participants(tx: Tx, id: number): Promise<Participant[]>;
 }
 
 export const EVENTS_REPOSITORY = Symbol('EVENTS_REPOSITORY');

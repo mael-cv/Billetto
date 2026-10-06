@@ -10,6 +10,8 @@ export interface Fixtures {
   tarifAttente: number;
   tarifCheckin: number;
   tarifLive: number;
+  eventProche: number;
+  tarifProche: number;
   eventCommence: number;
   tarifCommence: number;
   eventDraftB: number;
@@ -57,6 +59,9 @@ export async function createFixtures(): Promise<Fixtures> {
   const tarifAttente = await tarif(eventFutur, 'Attente', 1, '-1 day', '29 days');
   const tarifCheckin = await tarif(eventFutur, 'Checkin', 5, '-1 day', '29 days');
   const tarifLive = await tarif(eventFutur, 'Live', 5, '-1 day', '29 days');
+  // Commence dans 24 h : délai d'annulation par défaut (48 h) déjà dépassé.
+  const eventProche = await event(orgaA, 'e2e-proche', '24 hours', 'published');
+  const tarifProche = await tarif(eventProche, 'Standard', 10, '-1 day', '20 hours');
   const eventCommence = await event(orgaA, 'e2e-commence', '-1 hour', 'published');
   const tarifCommence = await tarif(eventCommence, 'Standard', 50, '-10 days', '-2 hours');
   const eventDraftB = await event(orgaB, 'e2e-brouillon-b', '40 days', 'draft');
@@ -71,6 +76,8 @@ export async function createFixtures(): Promise<Fixtures> {
     tarifAttente: Number(tarifAttente),
     tarifCheckin: Number(tarifCheckin),
     tarifLive: Number(tarifLive),
+    eventProche: Number(eventProche),
+    tarifProche: Number(tarifProche),
     eventCommence: Number(eventCommence),
     tarifCommence: Number(tarifCommence),
     eventDraftB: Number(eventDraftB),
@@ -96,6 +103,12 @@ export async function cleanFixtures(): Promise<void> {
       WHERE c.utilisateur_id = ANY(${userIds}::bigint[]) OR t.evenement_id = ANY(${eventIds}::bigint[])`;
     const orderIds = orders.map((o) => o.id);
     await tx.$executeRaw`DELETE FROM billets_scans WHERE evenement_id = ANY(${eventIds}::bigint[])`;
+    // E-mails en file (outbox) liés aux commandes, inscriptions ou utilisateurs de test.
+    await tx.$executeRaw`
+      DELETE FROM emails_sortants
+      WHERE commande_id = ANY(${orderIds}::bigint[]) OR utilisateur_id = ANY(${userIds}::bigint[])
+         OR liste_attente_id IN (SELECT la.id FROM liste_attente la JOIN tarifs t ON t.id = la.tarif_id
+                                 WHERE t.evenement_id = ANY(${eventIds}::bigint[]))`;
     // Liste d'attente et offres (réservations) des tarifs de test, avant les commandes (FK).
     await tx.$executeRaw`
       DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ANY(${eventIds}::bigint[]))`;

@@ -33,6 +33,10 @@ export interface EventSummary {
   type: { id: number; nom: string };
   organisateur: string;
   prixMin: string | null;
+  /** Événement en ligne : heure affichée dans le fuseau du visiteur. */
+  enLigne: boolean;
+  /** Fuseau IANA de l'événement (les instants restent en UTC). */
+  fuseauHoraire: string;
 }
 
 export interface TicketPrice {
@@ -60,6 +64,10 @@ export interface EventDetail {
   type: { id: number; nom: string };
   attributs: { cle: string; valeur: string }[];
   tarifs: TicketPrice[];
+  enLigne: boolean;
+  fuseauHoraire: string;
+  /** Annulation self-service possible jusqu'à debut - delaiAnnulationHeures. */
+  delaiAnnulationHeures: number;
 }
 
 export interface EventTypeNode {
@@ -116,6 +124,8 @@ export interface MyTicket extends OrderTicket {
   statutCommande: OrderStatus;
   /** Contenu du QR de check-in (BT1.<code>.<signature>). */
   qrPayload: string;
+  /** Annulation self-service possible jusqu'à cette date (délai configurable par événement). */
+  annulationPossibleJusqua: string | null;
 }
 
 export interface OrderSummary {

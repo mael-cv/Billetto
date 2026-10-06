@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Actor } from '../../../auth/domain/actor';
 import { toDbActor } from '../../../auth/domain/to-db-actor';
 import { ANONYMOUS, type DbActor, DbContextService } from '../../../common/database/db-context.service';
+import { toCsv } from '../../../common/csv';
 import { ApiError, notFound } from '../../../common/errors/http-errors';
 import { type Page, toPage } from '../../../common/pagination';
 import type { Pagination } from '../../../common/validation/schemas';
@@ -126,5 +127,56 @@ export class DeleteEventUseCase {
   async execute(actor: Actor, id: number): Promise<void> {
     const count = await this.db.run(toDbActor(actor), (tx) => this.events.delete(tx, id));
     if (count === 0) throw notFound('Événement');
+  }
+}
+
+const PARTICIPANT_HEADERS = [
+  'billet',
+  'code',
+  'tarif',
+  'prix_paye',
+  'prenom',
+  'nom',
+  'commande',
+  'statut_commande',
+  'achete_le',
+  'scanne',
+  'scanne_le',
+] as const;
+
+@Injectable()
+export class ExportParticipantsUseCase {
+  constructor(
+    private readonly db: DbContextService,
+    @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
+  ) {}
+
+  /**
+   * CSV des participants (un billet par ligne). Accès vérifié par PostgreSQL
+   * (participants_evenement → controler_checkin) : organisateur de
+   * l'événement ou admin, BT013 sinon ; BT050 si l'événement n'existe pas.
+   */
+  async execute(actor: Actor, id: number): Promise<{ filename: string; csv: string }> {
+    return this.db.run(toDbActor(actor), async (tx) => {
+      const participants = await this.events.participants(tx, id);
+      const event = await this.events.findByRef(tx, { id });
+      const csv = toCsv(
+        PARTICIPANT_HEADERS,
+        participants.map((p) => [
+          p.billetId,
+          p.code,
+          p.tarif,
+          p.prixPaye,
+          p.prenom,
+          p.nom,
+          p.commandeId,
+          p.statutCommande,
+          p.acheteLe,
+          p.scanne,
+          p.scanneLe,
+        ]),
+      );
+      return { filename: `participants-${event?.slug ?? id}.csv`, csv };
+    });
   }
 }
