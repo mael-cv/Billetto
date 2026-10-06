@@ -165,6 +165,16 @@ export function OrganizerEventsPage() {
                               </Button>
                             )}
                             <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Exporter les participants (CSV)"
+                              onClick={() =>
+                                api.exportParticipants(e.id).catch((err: unknown) => toast(errorMessage(err), "error"))
+                              }
+                            >
+                              Participants (CSV)
+                            </Button>
+                            <Button
                               variant="outline"
                               size="sm"
                               disabled={!canToggle}

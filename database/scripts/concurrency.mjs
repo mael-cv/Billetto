@@ -360,6 +360,9 @@ try {
     DELETE FROM paiement_webhooks WHERE reservation_id IN (SELECT id FROM reservations WHERE utilisateur_id = ${user});
     DELETE FROM billets_scans WHERE evenement_id = ${evt};
     DELETE FROM reservations WHERE tarif_id = ${tLive};
+    DELETE FROM emails_sortants WHERE utilisateur_id = ${user}
+       OR commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user})
+       OR liste_attente_id IN (SELECT la.id FROM liste_attente la JOIN tarifs t ON t.id = la.tarif_id WHERE t.evenement_id = ${evt});
     DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM reservations WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM paiements WHERE commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user});

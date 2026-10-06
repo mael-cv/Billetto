@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import {
   CreateEventUseCase,
   DeleteEventUseCase,
+  ExportParticipantsUseCase,
   GetEventUseCase,
   ListEventsUseCase,
   ReplaceEventAttributesUseCase,
@@ -20,6 +21,7 @@ import { EventsController } from './presentation/events.controller';
     UpdateEventUseCase,
     DeleteEventUseCase,
     ReplaceEventAttributesUseCase,
+    ExportParticipantsUseCase,
     { provide: EVENTS_REPOSITORY, useClass: PrismaEventsRepository },
   ],
   exports: [EVENTS_REPOSITORY],

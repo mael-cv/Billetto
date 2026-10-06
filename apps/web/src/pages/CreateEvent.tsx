@@ -6,7 +6,7 @@ import { z } from "zod";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { ApiError, errorMessage } from "../lib/http";
-import { formatDate, formatEUR, slugify } from "../lib/format";
+import { COMMON_TIME_ZONES, formatDate, formatEUR, slugify, visitorTimeZone, zonedTimeToIso } from "../lib/format";
 import { ATTRIBUTE_LABEL } from "../lib/presentation";
 import { keys, useCities, useEventTypes } from "../lib/queries";
 import { useRouter } from "../lib/router";
@@ -30,6 +30,13 @@ const schema = z
     ville: z.string().min(1, "Choisissez une ville"),
     lieuId: z.string().min(1, "Choisissez un lieu"),
     organisateurId: z.string().optional(),
+    enLigne: z.boolean(),
+    fuseauHoraire: z.string().min(1, "Choisissez un fuseau"),
+    delaiAnnulationHeures: z.coerce
+      .number({ error: "Nombre d'heures invalide" })
+      .int("Nombre entier")
+      .min(0, "0 minimum")
+      .max(720, "30 jours maximum"),
     tarifs: z
       .array(
         z.object({
@@ -52,7 +59,7 @@ const schema = z
     publier: z.boolean(),
   })
   .superRefine((v, ctx) => {
-    if (v.date && v.heureDebut && new Date(`${v.date}T${v.heureDebut}`) <= new Date()) {
+    if (v.date && v.heureDebut && new Date(zonedTimeToIso(v.date, v.heureDebut, v.fuseauHoraire)) <= new Date()) {
       ctx.addIssue({ code: "custom", path: ["date"], message: "La date doit être dans le futur" });
     }
     for (const [i, a] of v.attributs.entries()) {
@@ -70,19 +77,24 @@ type FormValues = z.output<typeof schema>;
 
 const STEP_FIELDS: FieldPath<FormInput>[][] = [
   ["nom", "typeEvenementId", "description"],
-  ["date", "heureDebut", "heureFin", "ville", "lieuId", "organisateurId"],
+  ["date", "heureDebut", "heureFin", "fuseauHoraire", "enLigne", "delaiAnnulationHeures", "ville", "lieuId", "organisateurId"],
   ["tarifs"],
   ["attributs"],
   [],
 ];
 
-/** Dates ISO de début et fin (fin le lendemain si l'heure de fin est antérieure). */
-function toRange(date: string, heureDebut: string, heureFin: string) {
-  const debut = new Date(`${date}T${heureDebut}`);
-  let fin = new Date(`${date}T${heureFin}`);
+/**
+ * Dates ISO de début et fin, l'heure saisie étant celle du fuseau de
+ * l'événement (fin le lendemain si l'heure de fin est antérieure).
+ */
+export function toRange(date: string, heureDebut: string, heureFin: string, timeZone: string) {
+  const debut = new Date(zonedTimeToIso(date, heureDebut, timeZone));
+  let fin = new Date(zonedTimeToIso(date, heureFin, timeZone));
   if (fin <= debut) fin = new Date(fin.getTime() + 86_400_000);
   return { debut: debut.toISOString(), fin: fin.toISOString() };
 }
+
+const TIME_ZONE_OPTIONS = Array.from(new Set<string>([...COMMON_TIME_ZONES, visitorTimeZone()]));
 
 export function CreateEventPage() {
   const { navigate } = useRouter();
@@ -105,6 +117,9 @@ export function CreateEventPage() {
       ville: "",
       lieuId: "",
       organisateurId: "",
+      enLigne: false,
+      fuseauHoraire: "Europe/Paris",
+      delaiAnnulationHeures: 48,
       tarifs: [{ nom: "Standard", prix: "" as unknown as number, quota: "" as unknown as number }],
       attributs: [],
       publier: false,
@@ -145,7 +160,7 @@ export function CreateEventPage() {
     setFailure(null);
     let createdId: number | null = null;
     try {
-      const { debut, fin } = toRange(v.date, v.heureDebut, v.heureFin);
+      const { debut, fin } = toRange(v.date, v.heureDebut, v.heureFin, v.fuseauHoraire);
       setProgress("Création de l'événement…");
       const created = await api.createEvent({
         nom: v.nom,
@@ -156,6 +171,9 @@ export function CreateEventPage() {
         lieuId: Number(v.lieuId),
         typeEvenementId: Number(v.typeEvenementId),
         statut: "draft",
+        enLigne: v.enLigne,
+        fuseauHoraire: v.fuseauHoraire,
+        delaiAnnulationHeures: v.delaiAnnulationHeures,
         ...(isAdmin ? { organisateurId: Number(v.organisateurId) } : {}),
       } as Parameters<typeof api.createEvent>[0]);
       createdId = created.id;
@@ -263,6 +281,31 @@ export function CreateEventPage() {
                       <Input id="heureFin" type="time" invalid={!!errors.heureFin} {...register("heureFin")} />
                     </FormField>
                   </div>
+                  <FormField label="Fuseau horaire (heures saisies)" error={errors.fuseauHoraire?.message} htmlFor="fuseau">
+                    <Select id="fuseau" {...register("fuseauHoraire")}>
+                      {TIME_ZONE_OPTIONS.map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormField>
+                  <FormField
+                    label="Annulation possible jusqu'à (heures avant le début)"
+                    error={errors.delaiAnnulationHeures?.message}
+                    htmlFor="delai"
+                  >
+                    <Input id="delai" type="number" min={0} max={720} invalid={!!errors.delaiAnnulationHeures} {...register("delaiAnnulationHeures")} />
+                  </FormField>
+                  <label className="flex items-start gap-3 text-sm sm:col-span-2">
+                    <input type="checkbox" className="mt-0.5 size-4 accent-[#d6ff3f]" {...register("enLigne")} />
+                    <span>
+                      Événement en ligne
+                      <span className="block text-xs text-muted-foreground">
+                        Les participants verront l'heure dans leur propre fuseau, avec celle de l'événement.
+                      </span>
+                    </span>
+                  </label>
                   <FormField label="Ville" error={errors.ville?.message} htmlFor="ville">
                     <Select id="ville" {...register("ville", { onChange: () => form.setValue("lieuId", "") })}>
                       <option value="">Choisir…</option>
@@ -399,7 +442,8 @@ export function CreateEventPage() {
                   <h3 className="mt-2 font-display text-base font-semibold leading-tight">{values.nom || "Nom de l'événement"}</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {lieu ? `${lieu.nom}, ${lieu.ville}` : "Lieu"}
-                    {values.date && ` · ${formatDate(`${values.date}T${values.heureDebut || "00:00"}`)}`}
+                    {values.date &&
+                      ` · ${formatDate(zonedTimeToIso(values.date, values.heureDebut || "00:00", values.fuseauHoraire), values.fuseauHoraire)}`}
                   </p>
                   <div className="mt-3 border-t border-border pt-3 text-sm">
                     <span className="text-muted-foreground">À partir de </span>

@@ -1,6 +1,6 @@
 // Appels de l'API REST, un par endpoint (voir doc/api.md).
 import type { PendingScan } from "./checkinQueue";
-import { http } from "./http";
+import { download, http } from "./http";
 import type {
   AdminUser,
   DailySales,
@@ -58,6 +58,11 @@ export interface EventInput {
   lieuId: number;
   typeEvenementId: number;
   statut?: "draft" | "published";
+  enLigne?: boolean;
+  /** Fuseau IANA de l'événement (heures saisies dans ce fuseau). */
+  fuseauHoraire?: string;
+  /** Annulation self-service possible jusqu'à N heures avant le début (0 à 720). */
+  delaiAnnulationHeures?: number;
 }
 
 export interface PriceInput {
@@ -91,6 +96,8 @@ export const api = {
   updateEvent: (id: number, body: Partial<EventInput> & { statut?: EventStatus }) =>
     http<EventDetail>("PATCH", `/events/${id}`, { body }),
   deleteEvent: (id: number) => http<void>("DELETE", `/events/${id}`),
+  /** Export CSV des participants (organisateur de l'événement ou admin). */
+  exportParticipants: (id: number) => download(`/events/${id}/participants/export`),
   replaceAttributes: (id: number, attributs: { cle: string; valeur: string }[]) =>
     http<EventDetail>("PUT", `/events/${id}/attributes`, { body: attributs }),
   createPrice: (eventId: number, body: PriceInput) => http<TicketPrice>("POST", `/events/${eventId}/prices`, { body }),

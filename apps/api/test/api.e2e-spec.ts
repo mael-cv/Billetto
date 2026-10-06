@@ -502,7 +502,8 @@ describe('API Billetto (e2e)', () => {
       expect(second.json()).toMatchObject({ resultat: 'doublon', premierScan: { appareil: 'e2e' } });
       expect(second.json().premierScan.recuA).toBe(premier.json().recuA);
 
-      const forge = await orgaA.post('/checkin/scan', scan(`${qr2.slice(0, -1)}A`));
+      // Dernier caractère de la signature remplacé par un autre (jamais identique).
+      const forge = await orgaA.post('/checkin/scan', scan(`${qr2.slice(0, -1)}${qr2.endsWith('A') ? 'B' : 'A'}`));
       expect(forge.json().resultat).toBe('invalide');
     });
 
@@ -598,6 +599,80 @@ describe('API Billetto (e2e)', () => {
         SELECT count(*) AS autres FROM evenements
         WHERE id = ANY(${liveB.evenements.map((e) => e.evenementId)}::bigint[]) AND organisateur_id <> ${fx.orgaB}`;
       expect(Number(autres)).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('souhaits secondaires (phase 15)', () => {
+    it('achat : e-mail de confirmation mis en file (outbox) dans la même transaction', async () => {
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 });
+      expect(achat.statusCode).toBe(201);
+      const [row] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM emails_sortants
+        WHERE type = 'commande_confirmee' AND commande_id = ${achat.json().commandeId}::bigint AND statut = 'a_envoyer'`;
+      expect(Number(row?.n)).toBe(1);
+    });
+
+    it('annulation self-service : date limite exposée, refusée après le délai (409)', async () => {
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifProche, quantite: 1 });
+      expect(achat.statusCode).toBe(201);
+      const id = achat.json().commandeId;
+
+      const detail = (await visiteur.get(`/orders/${id}`)).json();
+      expect(new Date(detail.annulationPossibleJusqua).getTime()).toBeLessThan(Date.now());
+      const ticket = (await visiteur.get('/tickets/me?pageSize=100')).json().items.find(
+        (t: { commandeId: number }) => t.commandeId === id,
+      );
+      expect(ticket.annulationPossibleJusqua).toBe(detail.annulationPossibleJusqua);
+
+      const refus = await visiteur.post(`/orders/${id}/refund`);
+      expect(refus.statusCode).toBe(409);
+      expect(refus.json().error).toBe('DELAI_ANNULATION_DEPASSE');
+
+      // L'admin n'est pas soumis au délai.
+      expect((await admin.post(`/orders/${id}/refund`)).statusCode).toBe(200);
+    });
+
+    it('délai configurable par l’organisateur ; fuseau et événement en ligne exposés', async () => {
+      const patch = await orgaA.patch(`/events/${fx.eventProche}`, {
+        delaiAnnulationHeures: 2,
+        enLigne: true,
+        fuseauHoraire: 'America/New_York',
+      });
+      expect(patch.statusCode).toBe(200);
+      expect(patch.json()).toMatchObject({ delaiAnnulationHeures: 2, enLigne: true, fuseauHoraire: 'America/New_York' });
+
+      const invalide = await orgaA.patch(`/events/${fx.eventProche}`, { fuseauHoraire: 'Mars/Olympus' });
+      expect(invalide.statusCode).toBe(400);
+
+      const liste = (await anonyme.get('/events?q=e2e-proche&pageSize=10')).json().items;
+      expect(liste.find((e: { id: number }) => e.id === fx.eventProche)).toMatchObject({
+        enLigne: true,
+        fuseauHoraire: 'America/New_York',
+      });
+
+      // Délai ramené à 2 h : l'annulation redevient possible.
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifProche, quantite: 1 });
+      expect((await visiteur.post(`/orders/${achat.json().commandeId}/refund`)).statusCode).toBe(200);
+    });
+
+    it('export CSV des participants : en-têtes, un billet par ligne, accès restreint', async () => {
+      const res = await orgaA.get(`/events/${fx.eventProche}/participants/export`);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^text\/csv; charset=utf-8/);
+      expect(res.headers['content-disposition']).toBe(`attachment; filename="participants-e2e-proche-${RUN}.csv"`);
+      const lines = res.body.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
+      expect(lines[0]).toBe('billet;code;tarif;prix_paye;prenom;nom;commande;statut_commande;achete_le;scanne;scanne_le');
+
+      const [base] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM billets b JOIN tarifs t ON t.id = b.tarif_id WHERE t.evenement_id = ${fx.eventProche}`;
+      expect(lines).toHaveLength(Number(base?.n) + 1);
+      expect(lines.slice(1).every((l) => l.split(';').length === 11)).toBe(true);
+      expect(lines.slice(1).map((l) => l.split(';')[7])).toEqual(expect.arrayContaining(['refunded']));
+
+      expect((await orgaB.get(`/events/${fx.eventProche}/participants/export`)).statusCode).toBe(403);
+      expect((await visiteur.get(`/events/${fx.eventProche}/participants/export`)).statusCode).toBe(403);
+      expect((await admin.get(`/events/${fx.eventProche}/participants/export`)).statusCode).toBe(200);
     });
   });
 

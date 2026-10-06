@@ -281,6 +281,10 @@ WHERE v.id = t.id;
 -- journal alimenté par trg_tarifs_audit_update (migration 004).
 TRUNCATE journal_tarifs;
 
+-- Les commandes du jeu de données ne sont pas des achats réels : aucun
+-- e-mail de confirmation ne doit partir (outbox alimentée par trigger, 013).
+TRUNCATE emails_sortants;
+
 -- Réaligner les séquences IDENTITY après OVERRIDING SYSTEM VALUE.
 DO $$
 DECLARE

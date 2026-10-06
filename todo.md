@@ -47,12 +47,13 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test de concurrence (adapter `database/scripts/concurrency.mjs`) : N holds simultanés sur tarif à quota fixe, zéro survente
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
-## Phase 11 � Idempotence webhook paiement
-- [x] Migration `013_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
-- [x] Endpoint `POST /payments/webhook` : garde HMAC-SHA256 d�di�e, sans session ; corps brut sign�, secret `PAYMENTS_WEBHOOK_SECRET`
-- [x] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement m�tier dans la m�me transaction que l'insertion d'idempotence
-- [x] Test : envoi du m�me �v�nement webhook 40 fois en parall�le ? un seul billet cr�� (`concurrency.mjs`)
-- [x] Test : signature invalide rejet�e, signature valide confirme la r�servation une seule fois (unitaires + e2e)
+## Phase 11 — Idempotence webhook paiement
+- [x] Migration `014_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)` (renumérotée : 013 est pris par la Phase 15)
+- [x] Endpoint `POST /payments/webhook` : garde HMAC-SHA256 dédiée, sans session ; corps brut signé, secret `PAYMENTS_WEBHOOK_SECRET`
+- [x] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
+- [x] Test : envoi du même événement webhook 40 fois en parallèle → un seul billet créé (`concurrency.mjs`)
+- [x] Test : signature invalide rejetée, signature valide confirme la réservation une seule fois (unitaires + e2e)
+
 ## Phase 12 — Liste d'attente
 - [x] Migration `010_liste_attente.sql` : table `liste_attente` (`tarif_id, utilisateur_id, quantite_souhaitee, statut, notifie_a, expire_a`)
 - [x] Fonction `notifier_prochain_en_attente(tarif_id)` avec `FOR UPDATE SKIP LOCKED`, FIFO par `created_at` — offre = réservation à TTL 30 min (réutilise `places_occupees` et `confirmer_reservation`)
@@ -78,19 +79,19 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : isolation multi-tenant du flux, cohérence des chiffres sous charge — `database/tests/phase14_dashboard.sql` (RLS organisateur A/B), test 10 de `concurrency.mjs` (30 lectures pendant 40 achats/holds), e2e `dashboard live`
 
 ## Phase 15 — Souhaits secondaires
-- [ ] Annulation self-service : délai configurable, appel autorisé depuis le compte utilisateur (pas seulement organisateur/admin)
-- [ ] Email de confirmation avec billet (déclenché à la confirmation de commande et à la réponse waitlist), QR joint si phase 13 livrée
-- [ ] Export CSV participants : `GET /events/:id/participants/export`
-- [ ] Fuseaux horaires : vérifier `timestamptz`, ajouter fuseau d'affichage explicite pour événements en ligne, conversion front (`Intl.DateTimeFormat`)
-- [ ] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte
+- [x] Annulation self-service : délai configurable, appel autorisé depuis le compte utilisateur (pas seulement organisateur/admin) — `evenements.delai_annulation` (48 h par défaut, réglable par l’organisateur), BT014 → 409 `DELAI_ANNULATION_DEPASSE`, admin non soumis au délai ; échéance affichée sur « Mes billets »
+- [x] Email de confirmation avec billet (déclenché à la confirmation de commande et à la réponse waitlist), QR joint si phase 13 livrée — outbox `emails_sortants` alimentée par trigger (commande payée, offre de liste d’attente), job API `EmailOutboxJob` + nodemailer, QR en PNG joints ; Mailpit en dev
+- [x] Export CSV participants : `GET /events/:id/participants/export` — `participants_evenement` (organisateur de l’événement ou admin), CSV « ; » + BOM, injection de formules neutralisée
+- [x] Fuseaux horaires : vérifier `timestamptz`, ajouter fuseau d'affichage explicite pour événements en ligne, conversion front (`Intl.DateTimeFormat`) — `evenements.fuseau_horaire` + `en_ligne`, aucune colonne `timestamp` sans fuseau, saisie et affichage dans le fuseau de l’événement (`lib/format.ts`)
+- [x] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte — `database/tests/phase15_souhaits.sql`, e2e « souhaits secondaires », `tests/timezones.spec.ts`, `csv.spec.ts`, `notifications.spec.ts`
 
 ## Phase 16 — Charge, concurrence, durcissement, documentation
-- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus)
-- [ ] Rejouer les tests d'isolation RLS (phase 09) sur toutes les tables des phases 10-14
-- [ ] Test d'idempotence webhook sous rejeu massif
-- [ ] Documenter chaque phase (`doc/phases/phase-09-*.md` à `phase-15-*.md`), étendre les codes d'erreur (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon scan, `BT033` webhook dupliqué)
-- [ ] Mettre à jour `doc/database.md`
-- [ ] Intégrer les nouveaux scripts de test/charge au pipeline CI
+- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus) — ⚠️ fait **hors webhook** (`pnpm test:load`, API complète) ; partie webhook : rejeu massif couvert par `concurrency.mjs`, pas encore de vague webhook dans `test:load`
+- [x] Rejouer les tests d'isolation RLS (phase 09) sur toutes les tables des phases 10-14 — `database/tests/phase16_isolation.sql` + garde-fou : toute table lisible par visiteur/organisateur doit avoir une RLS forcée
+- [x] Test d'idempotence webhook sous rejeu massif — `concurrency.mjs` (40 envois parallèles du même événement → 1 billet) + `phase11_webhooks.sql`
+- [x] Documenter chaque phase (`doc/phases/phase-09-*.md` à `phase-15-*.md`), étendre les codes d'erreur (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon scan, `BT033` webhook dupliqué) — phases 09–16 documentées (11 : fiche « à faire ») ; **numérotation conservée** (BT030–033 réservations, BT043 liste d’attente, doublon de scan = résultat et non erreur), correspondance dans `doc/database.md`
+- [x] Mettre à jour `doc/database.md`
+- [x] Intégrer les nouveaux scripts de test/charge au pipeline CI — `.github/workflows/ci.yml` : checks puis base vierge (migrations, seeds, `db:test`, `test:e2e`, `test:load`)
 
 ## Risques techniques principaux
 

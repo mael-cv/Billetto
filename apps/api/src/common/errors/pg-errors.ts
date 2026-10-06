@@ -29,6 +29,8 @@ const SQLSTATE_MAP: Record<string, Mapping> = {
   BT011: { status: 409, error: 'COMMANDE_NON_REMBOURSABLE' },
   BT012: { status: 409, error: 'REMBOURSEMENT_IMPOSSIBLE' },
   BT013: { status: 403, error: 'ACTION_INTERDITE', message: 'Action interdite pour ce compte' },
+  BT014: { status: 409, error: 'DELAI_ANNULATION_DEPASSE' },
+  BT015: { status: 422, error: 'FUSEAU_INVALIDE' },
   BT020: { status: 422, error: 'ATTRIBUT_INVALIDE' },
   BT030: { status: 422, error: 'MODE_PAIEMENT_INVALIDE' },
   BT031: { status: 404, error: 'RESERVATION_INTROUVABLE' },
