@@ -197,3 +197,24 @@ export interface AdminUser {
   organisateurId: number | null;
   createdAt: string;
 }
+
+export type WaitlistStatus = "en_attente" | "notifiee" | "confirmee" | "expiree" | "annulee";
+
+/** Vue organisateur d'une file : aucune donnée personnelle de l'inscrit. */
+export interface WaitlistQueueItem {
+  id: number;
+  quantite: number;
+  statut: WaitlistStatus;
+  /** Rang FIFO (1 = tête) tant que l'inscription est en_attente. */
+  position: number | null;
+  notifieA: string | null;
+  expireA: string | null;
+  createdAt: string;
+}
+
+export interface WaitlistEntry extends WaitlistQueueItem {
+  tarifId: number;
+  tarif: string;
+  evenementId: number;
+  evenement: string;
+}

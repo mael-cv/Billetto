@@ -28,7 +28,11 @@ export class ReservationsPurgeJob implements OnModuleInit, OnModuleDestroy {
 
   async purge(): Promise<void> {
     try {
-      await this.db.run({ userId: null, role: 'admin' }, (tx) => tx.$executeRaw`CALL purger_reservations_expirees()`);
+      await this.db.run({ userId: null, role: 'admin' }, async (tx) => {
+        await tx.$executeRaw`CALL purger_reservations_expirees()`;
+        // Rattrape les offres de liste d'attente expirées (lazy, sans événement).
+        await tx.$queryRaw`SELECT traiter_listes_attente()`;
+      });
     } catch (err) {
       this.logger.error(`purge des réservations expirées impossible : ${String(err)}`);
     }

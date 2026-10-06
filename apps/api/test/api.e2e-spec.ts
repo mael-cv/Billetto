@@ -332,6 +332,88 @@ describe('API Billetto (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('liste d’attente', () => {
+    let attente1: Client;
+    let attente2: Client;
+    let commande: number;
+    let entree1: number;
+    let entree2: number;
+
+    const inscrit = async (name: string) => {
+      const client = await Client.anonymous(app);
+      await client.post('/auth/register', { email: email(name), password: TEST_PASSWORD, prenom: 'W', nom: name });
+      return client;
+    };
+    const mine = async (client: Client, id: number) =>
+      (await client.get('/waitlist/me')).json().find((e: { id: number }) => e.id === id);
+
+    it('inscription anonyme → 401 ; places disponibles → 409 PLACES_DISPONIBLES', async () => {
+      expect((await anonyme.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 })).statusCode).toBe(401);
+      attente1 = await inscrit('attente1');
+      attente2 = await inscrit('attente2');
+      const res = await attente1.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('PLACES_DISPONIBLES');
+    });
+
+    it('tarif complet : inscriptions FIFO, double inscription → 409', async () => {
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(achat.statusCode).toBe(201);
+      commande = achat.json().commandeId;
+
+      const r1 = await attente1.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(r1.statusCode).toBe(201);
+      expect(r1.json()).toMatchObject({ statut: 'en_attente', position: 1, tarif: 'Attente' });
+      entree1 = r1.json().id;
+      const r2 = await attente2.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(r2.json()).toMatchObject({ statut: 'en_attente', position: 2 });
+      entree2 = r2.json().id;
+
+      const again = await attente1.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(again.statusCode).toBe(409);
+      expect(again.json().error).toBe('DEJA_INSCRIT');
+    });
+
+    it('vue organisateur : file de ses tarifs uniquement (RLS), interdite aux visiteurs', async () => {
+      const file = (await orgaA.get(`/waitlist/tarifs/${fx.tarifAttente}`)).json();
+      expect(file.map((e: { id: number; position: number }) => [e.id, e.position])).toEqual([
+        [entree1, 1],
+        [entree2, 2],
+      ]);
+      expect(file[0]).not.toHaveProperty('utilisateurId');
+      expect((await orgaB.get(`/waitlist/tarifs/${fx.tarifAttente}`)).json()).toEqual([]);
+      expect((await visiteur.get(`/waitlist/tarifs/${fx.tarifAttente}`)).statusCode).toBe(403);
+    });
+
+    it('désistement : seul le premier inscrit reçoit l’offre, la place ne fuit pas', async () => {
+      expect((await visiteur.post(`/orders/${commande}/refund`)).statusCode).toBe(200);
+
+      expect(await mine(attente1, entree1)).toMatchObject({ statut: 'notifiee', expireA: expect.any(String) });
+      expect(await mine(attente2, entree2)).toMatchObject({ statut: 'en_attente', position: 1 });
+
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifAttente, quantite: 1 });
+      expect(achat.statusCode).toBe(409);
+      expect(achat.json().error).toBe('QUOTA_EPUISE');
+      expect((await attente2.post(`/waitlist/${entree1}/confirm`)).statusCode).toBe(403);
+    });
+
+    it('offre refusée → passe au suivant, qui confirme et obtient son billet', async () => {
+      expect((await attente1.delete(`/waitlist/${entree1}`)).statusCode).toBe(204);
+      expect(await mine(attente1, entree1)).toMatchObject({ statut: 'annulee' });
+      expect(await mine(attente2, entree2)).toMatchObject({ statut: 'notifiee' });
+
+      const res = await attente2.post(`/waitlist/${entree2}/confirm`);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().billetIds).toHaveLength(1);
+      expect(await mine(attente2, entree2)).toMatchObject({ statut: 'confirmee' });
+
+      const again = await attente2.post(`/waitlist/${entree2}/confirm`);
+      expect(again.statusCode).toBe(409);
+      expect(again.json().error).toBe('OFFRE_INACTIVE');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   describe('organisateurs', () => {
     let evenement: number;
     let tarif: number;
