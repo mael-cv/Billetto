@@ -11,7 +11,8 @@
     "test": "jest --passWithNoTests",
     "prisma:pull": "dotenv -e ../../.env -- prisma db pull",
     "prisma:generate": "prisma generate",
-    "test:e2e": "dotenv -e ../../.env -v NODE_OPTIONS=--experimental-vm-modules -- jest --config test/jest-e2e.json --runInBand"
+    "test:e2e": "dotenv -e ../../.env -v NODE_OPTIONS=--experimental-vm-modules -- jest --config test/jest-e2e.json --runInBand",
+    "test:load": "dotenv -e ../../.env -v NODE_OPTIONS=--experimental-vm-modules -- jest --config test/jest-load.json --runInBand"
   },
   "prisma": {
     "schema": "../../prisma/schema.prisma"
