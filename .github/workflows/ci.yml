@@ -31,11 +31,13 @@ jobs:
         run: pnpm --filter @billetto/api prisma:generate
       - name: Lint
         run: pnpm lint
-      - name: Types (API et web)
+      - name: Types (API, web et security-audit)
         run: |
           pnpm --filter @billetto/api exec tsc --noEmit -p tsconfig.json
           pnpm --filter @billetto/web exec tsc --noEmit -p tsconfig.json
+          pnpm --filter @billetto/security-audit exec tsc --noEmit -p tsconfig.json
       - name: Tests unitaires
+        # inclut les tests du moteur security-audit (unitaires + acceptance fixture, sans base)
         run: pnpm test
       - name: Build
         run: pnpm build

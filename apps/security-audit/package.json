@@ -1,0 +1,28 @@
+{
+  "name": "@billetto/security-audit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plateforme d'audit de sécurité Billetto : pentest black-box local + audit white-box + infra/supply-chain + corrélation + reporting.",
+  "bin": {
+    "security-audit": "src/cli.ts"
+  },
+  "scripts": {
+    "audit": "tsx src/cli.ts",
+    "pentest": "tsx src/cli.ts --pentest",
+    "pentest:full": "tsx src/cli.ts --pentest --full",
+    "whitebox": "tsx src/cli.ts --sast --secrets --dependencies --infra",
+    "test": "jest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0"
+  }
+}
