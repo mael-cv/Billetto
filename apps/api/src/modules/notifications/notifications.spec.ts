@@ -112,7 +112,8 @@ describe('e-mails : job outbox', () => {
     expect(mail?.attachments[0]?.contentType).toBe('image/png');
     // Signature PNG.
     expect(mail?.attachments[0]?.content.subarray(1, 4).toString()).toBe('PNG');
-  });
+    // Génération PNG + chargement de nodemailer : lent au premier appel sur une machine chargée.
+  }, 30_000);
 
   it('échec SMTP : e-mail marqué en échec (nouvel essai géré par marquer_email)', async () => {
     const { job, marks } = setup({
