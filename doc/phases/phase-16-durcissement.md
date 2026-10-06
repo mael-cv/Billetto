@@ -7,7 +7,7 @@
 - Exécuter toute la suite en CI.
 
 ## Décisions
-- **Sans webhook.** La Phase 11 n'est pas faite. Le scénario de charge passe par l'API sans webhook. Les points « charge webhook inclus » et « rejeu massif de webhook » restent ouverts (voir [phase 11](phase-11-webhooks.md)).
+- **Webhook.** La Phase 11 a été livrée après cette phase (migration 014). Le rejeu massif est couvert par `concurrency.mjs` ; le scénario `test:load` ne contient pas encore de vague webhook (voir [phase 11](phase-11-webhooks.md)).
 - **Codes d'erreur inchangés.** La numérotation proposée par le TODO (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon de scan, `BT033` webhook dupliqué) entre en conflit avec les codes en place depuis la phase 10. L'API, le front et les tests en dépendent : rien n'a été renuméroté. La table complète réelle est dans [database.md](../database.md#codes-derreur), avec la correspondance.
 - **`doc/` est versionné** (retiré du `.gitignore`). `docs/` (instructions d'agents) reste ignoré.
 
@@ -49,9 +49,9 @@ Jeu d'essai propre avec deux collectifs (achats, holds, inscriptions croisées, 
 
 ## Critères d'acceptation
 - [x] Charge combinée (holds, confirmations, expiration, liste d'attente) sans survente via l'API complète, **hors webhook**.
-- [ ] Charge avec webhook : dépend de la phase 11.
+- [ ] Charge avec webhook : vague à ajouter à `test:load`.
 - [x] Isolation RLS rejouée sur les tables des phases 10 à 15, avec garde-fou automatique.
-- [ ] Idempotence webhook sous rejeu massif : dépend de la phase 11.
+- [x] Idempotence webhook sous rejeu massif (`concurrency.mjs`, phase 11).
 - [x] Documentation des phases 09 à 15 et des codes d'erreur (numérotation existante conservée).
 - [x] `doc/database.md` à jour.
 - [x] Nouveaux tests dans la CI.

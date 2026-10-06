@@ -48,11 +48,11 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `014_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
-- [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
-- [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
-- [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé
-- [ ] Test : signature invalide rejetée
+- [x] Migration `014_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)` (renumérotée : 013 est pris par la Phase 15)
+- [x] Endpoint `POST /payments/webhook` : garde HMAC-SHA256 dédiée, sans session ; corps brut signé, secret `PAYMENTS_WEBHOOK_SECRET`
+- [x] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
+- [x] Test : envoi du même événement webhook 40 fois en parallèle → un seul billet créé (`concurrency.mjs`)
+- [x] Test : signature invalide rejetée, signature valide confirme la réservation une seule fois (unitaires + e2e)
 
 ## Phase 12 — Liste d'attente
 - [x] Migration `010_liste_attente.sql` : table `liste_attente` (`tarif_id, utilisateur_id, quantite_souhaitee, statut, notifie_a, expire_a`)
@@ -86,9 +86,9 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte — `database/tests/phase15_souhaits.sql`, e2e « souhaits secondaires », `tests/timezones.spec.ts`, `csv.spec.ts`, `notifications.spec.ts`
 
 ## Phase 16 — Charge, concurrence, durcissement, documentation
-- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus) — ⚠️ fait **hors webhook** (`pnpm test:load`, API complète) ; partie webhook : dépend de la Phase 11
+- [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus) — ⚠️ fait **hors webhook** (`pnpm test:load`, API complète) ; partie webhook : rejeu massif couvert par `concurrency.mjs`, pas encore de vague webhook dans `test:load`
 - [x] Rejouer les tests d'isolation RLS (phase 09) sur toutes les tables des phases 10-14 — `database/tests/phase16_isolation.sql` + garde-fou : toute table lisible par visiteur/organisateur doit avoir une RLS forcée
-- [ ] Test d'idempotence webhook sous rejeu massif — dépend de la Phase 11 (non implémentée)
+- [x] Test d'idempotence webhook sous rejeu massif — `concurrency.mjs` (40 envois parallèles du même événement → 1 billet) + `phase11_webhooks.sql`
 - [x] Documenter chaque phase (`doc/phases/phase-09-*.md` à `phase-15-*.md`), étendre les codes d'erreur (`BT030` réservation expirée, `BT031` liste d'attente fermée, `BT032` doublon scan, `BT033` webhook dupliqué) — phases 09–16 documentées (11 : fiche « à faire ») ; **numérotation conservée** (BT030–033 réservations, BT043 liste d’attente, doublon de scan = résultat et non erreur), correspondance dans `doc/database.md`
 - [x] Mettre à jour `doc/database.md`
 - [x] Intégrer les nouveaux scripts de test/charge au pipeline CI — `.github/workflows/ci.yml` : checks puis base vierge (migrations, seeds, `db:test`, `test:e2e`, `test:load`)

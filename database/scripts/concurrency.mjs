@@ -14,13 +14,15 @@
 //   6. Un hold expiré ne bloque plus acheter_billet() non plus.
 //   7. purger_reservations_expirees() marque les holds expirés sans toucher
 //      les holds actifs (reporting uniquement).
-//   8. Phase 12 : une place se libère (hold expiré, aucun événement) et N
+//   8. Phase 11 : N livraisons du même paiement réussi confirment un seul hold
+//      et ne créent qu'un seul billet.
+//   9. Phase 12 : une place se libère (hold expiré, aucun événement) et N
 //      sessions appellent traiter_liste_attente en même temps : une seule
 //      offre, pour la tête de file (FIFO strict).
-//   9. Phase 13 : N sessions scannent le même billet (client_scan_id
+//  10. Phase 13 : N sessions scannent le même billet (client_scan_id
 //      distincts) → exactement 1 'ok' ; N sessions rejouent le même
 //      client_scan_id → 1 seule ligne.
-//  10. Phase 14 : pendant que N sessions achètent et réservent sur un même
+//  11. Phase 14 : pendant que N sessions achètent et réservent sur un même
 //      événement, une session lit en boucle v_remplissage (dashboard live) :
 //      jamais vendus + réservés > places, et chiffres finaux = comptes directs.
 //
@@ -53,6 +55,25 @@ function parallel(sqlTemplate) {
   };
 }
 
+function parallelWebhook(sqlTemplate) {
+  const script = `
+    for i in $(seq 1 ${N}); do
+      psql -X -q -At -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+           -c "${sqlTemplate}" > /tmp/conc_webhook_$i.log 2>&1 &
+    done
+    wait
+    cat /tmp/conc_webhook_*.log; rm -f /tmp/conc_webhook_*.log`;
+  const res = spawnSync('docker', ['compose', 'exec', '-T', 'postgres', 'sh', '-c', script], {
+    encoding: 'utf-8',
+  });
+  const lines = (res.stdout ?? '').split('\n').map((line) => line.trim());
+  return {
+    processed: lines.filter((line) => line === 'f').length,
+    duplicates: lines.filter((line) => line === 't').length,
+    other: lines.filter((line) => /ERROR/.test(line)),
+  };
+}
+
 // Écritures concurrentes + lecteur en boucle, dans le même conteneur.
 function parallelWithReader(writeSql, readSql, reads) {
   const script = `
@@ -82,13 +103,13 @@ const setup = q(`
              FROM o, l RETURNING id, organisateur_id, lieu_id),
        t AS (INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
              SELECT e.id, v.nom, 20, ${QUOTA}, now() - interval '1 day', now() + interval '29 days'
-             FROM e, (VALUES ('Verrou'), ('Naif'), ('Hold'), ('Expiry'), ('ExpiryBuy')) v(nom) RETURNING id, nom)
+             FROM e, (VALUES ('Verrou'), ('Naif'), ('Hold'), ('Expiry'), ('ExpiryBuy'), ('Webhook')) v(nom) RETURNING id, nom)
   SELECT (SELECT id FROM u) || ' ' || (SELECT id FROM e) || ' ' || (SELECT id FROM o) || ' ' ||
          (SELECT id FROM l) || ' ' || (SELECT id FROM t WHERE nom = 'Verrou') || ' ' || (SELECT id FROM t WHERE nom = 'Naif') || ' ' ||
          (SELECT id FROM t WHERE nom = 'Hold') || ' ' || (SELECT id FROM t WHERE nom = 'Expiry') || ' ' ||
-         (SELECT id FROM t WHERE nom = 'ExpiryBuy')
+         (SELECT id FROM t WHERE nom = 'ExpiryBuy') || ' ' || (SELECT id FROM t WHERE nom = 'Webhook')
 `);
-const [user, evt, orga, lieu, tVerrou, tNaif, tHold, tExpiry, tExpiryBuy] = setup.split(/\s+/).map(Number);
+const [user, evt, orga, lieu, tVerrou, tNaif, tHold, tExpiry, tExpiryBuy, tWebhook] = setup.split(/\s+/).map(Number);
 
 q(`
   CREATE SCHEMA IF NOT EXISTS demo_concurrence;
@@ -185,6 +206,24 @@ try {
     .map(Number);
   console.log(`  purge : ${expirees} holds marqués expirés, ${actives} hold actif conservé`);
 
+  console.log(`» phase 11 : ${N} rejeux concurrents du même webhook`);
+  const reservationWebhook = Number(
+    q(`SELECT reservation_id FROM creer_reservation(${user}, ${tWebhook}, 1, 'carte')`),
+  );
+  const webhookEventId = `conc-${user}-${reservationWebhook}`;
+  const webhooks = parallelWebhook(
+    `SELECT duplique FROM traiter_paiement_webhook('${webhookEventId}', 'payment.succeeded', ${reservationWebhook}, '{}'::jsonb)`,
+  );
+  const webhookCount = Number(
+    q(`SELECT count(*) FROM paiement_webhooks WHERE evenement_externe_id = '${webhookEventId}'`),
+  );
+  const webhookTickets = Number(
+    q(`SELECT count(*) FROM billets WHERE commande_id = (SELECT commande_id FROM reservations WHERE id = ${reservationWebhook})`),
+  );
+  console.log(
+    `  webhook : ${webhooks.processed} traité, ${webhooks.duplicates} doublons, ${webhookCount} événement, ${webhookTickets} billet`,
+  );
+
   // Quota pris par QUOTA-1 billets + 1 hold à TTL 1s ; 3 inscrits ; le hold
   // expire (lazy, aucun trigger) ; N balayages concurrents.
   console.log(`» phase 12 : ${N} traiter_liste_attente simultanés pour 1 place libérée`);
@@ -199,9 +238,13 @@ try {
     .split(/\s+/)
     .map(Number);
   q(`SELECT commande_id FROM acheter_billet(${user}, ${tAttente}, ${QUOTA - 1})`);
-  q(`SELECT reservation_id FROM creer_reservation(${user}, ${tAttente}, 1, 'carte', interval '1 second')`);
+  const holdAttente = Number(
+    q(`SELECT reservation_id FROM creer_reservation(${user}, ${tAttente}, 1, 'carte', interval '1 hour')`),
+  );
   for (const a of attendants) q(`SELECT inscrire_liste_attente(${a}, ${tAttente}, 1)`);
-  q(`SELECT pg_sleep(1.5)`);
+  // Expire le hold après les inscriptions : un TTL court ici rendait le test
+  // dépendant du délai des appels Docker/psql avant la troisième inscription.
+  q(`UPDATE reservations SET expire_a = now() - interval '1 second' WHERE id = ${holdAttente}`);
   const balayages = parallel(`SELECT traiter_liste_attente(${tAttente})`);
   const offres = q(
     `SELECT utilisateur_id FROM liste_attente WHERE tarif_id = ${tAttente} AND statut = 'notifiee' ORDER BY id`,
@@ -292,6 +335,10 @@ try {
       `dashboard : chiffres finaux ${vueVendus}+${vueReserves} ≠ base ${vraisVendus}+${vraisReserves} (quota ${QUOTA})`,
     ],
     [expirees === QUOTA && actives === 1, `purge : ${QUOTA} expirés / 1 actif attendus, ${expirees} / ${actives}`],
+    [webhooks.other.length === 0, `webhook : erreurs inattendues : ${webhooks.other.join(' | ')}`],
+    [webhooks.processed === 1, `webhook : un seul traitement attendu, ${webhooks.processed}`],
+    [webhooks.duplicates === N - 1, `webhook : ${N - 1} doublons attendus, ${webhooks.duplicates}`],
+    [webhookCount === 1 && webhookTickets === 1, `webhook : un événement et un billet attendus, ${webhookCount} / ${webhookTickets}`],
   ];
   for (const [ok, msg] of checks) {
     if (!ok) {
@@ -306,9 +353,11 @@ try {
     console.log(`✓ dashboard live : aucune lecture incohérente sous charge, chiffres finaux exacts`);
     console.log(`✓ check-in : un seul scan ok malgré ${N} scans simultanés ; rejeux idempotents`);
     console.log(`✓ liste d'attente : une seule offre, à la tête de file, malgré ${N} balayages concurrents`);
+    console.log(`✓ webhook : un traitement et un billet malgré ${N} rejeux simultanés`);
   }
 } finally {
   q(`
+    DELETE FROM paiement_webhooks WHERE reservation_id IN (SELECT id FROM reservations WHERE utilisateur_id = ${user});
     DELETE FROM billets_scans WHERE evenement_id = ${evt};
     DELETE FROM reservations WHERE tarif_id = ${tLive};
     DELETE FROM emails_sortants WHERE utilisateur_id = ${user}
@@ -321,7 +370,7 @@ try {
     DELETE FROM reservations WHERE utilisateur_id = ${user};
     DELETE FROM commandes WHERE utilisateur_id = ${user};
     DELETE FROM tarifs WHERE evenement_id IN (${evt}, ${evtLive});
-    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy}, ${tAttente}, ${tLive});
+    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy}, ${tWebhook}, ${tAttente}, ${tLive});
     DELETE FROM evenements WHERE id IN (${evt}, ${evtLive});
     DELETE FROM lieux WHERE id = ${lieu};
     DELETE FROM utilisateurs WHERE id = ${user} OR email LIKE 'attente-conc-%-${evt}@billetto.test';

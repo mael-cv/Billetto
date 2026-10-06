@@ -24,7 +24,13 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
           level: config.LOG_LEVEL,
           // Jamais de secret dans les journaux (les corps ne sont pas journalisés).
           redact: {
-            paths: ['req.headers.cookie', `req.headers["${CSRF_HEADER}"]`, 'req.headers.authorization', 'res.headers["set-cookie"]'],
+            paths: [
+              'req.headers.cookie',
+              `req.headers["${CSRF_HEADER}"]`,
+              'req.headers.authorization',
+              'req.headers["x-billetto-signature"]',
+              'res.headers["set-cookie"]',
+            ],
             censor: '[masqué]',
           },
         },
@@ -34,6 +40,9 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
     logger: silent ? false : ['error', 'warn', 'log'],
     bufferLogs: false,
   });
+
+  // Le webhook signe les octets JSON exacts, avant leur parsing.
+  app.getHttpAdapter().registerParserMiddleware(undefined, true);
 
   await app.register(helmet, {
     // API JSON : aucune ressource à charger, aucun affichage en iframe.
