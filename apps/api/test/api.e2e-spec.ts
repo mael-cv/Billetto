@@ -414,6 +414,87 @@ describe('API Billetto (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('check-in', () => {
+    let qr1: string;
+    let qr2: string;
+    const scan = (payload: string, clientScanId = crypto.randomUUID()) => ({
+      clientScanId,
+      payload,
+      evenementId: fx.eventFutur,
+      scanneA: new Date().toISOString(),
+      appareil: 'e2e',
+    });
+
+    it('billets : QR signé exposé au titulaire', async () => {
+      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifCheckin, quantite: 2 });
+      expect(achat.statusCode).toBe(201);
+      const ids: number[] = achat.json().billetIds;
+      const tickets = (await visiteur.get('/tickets/me?pageSize=100')).json().items;
+      [qr1, qr2] = ids.map((id) => tickets.find((t: { id: number }) => t.id === id).qrPayload);
+      expect(qr1).toMatch(/^BT1\.[0-9a-f-]{36}\.[A-Za-z0-9_-]{22}$/);
+    });
+
+    it('accès : visiteur 403, organisateur d’un autre événement 403', async () => {
+      expect((await visiteur.post('/checkin/scan', scan(qr1))).statusCode).toBe(403);
+      expect((await visiteur.get(`/checkin/manifest?evenementId=${fx.eventFutur}`)).statusCode).toBe(403);
+      const autre = await orgaB.post('/checkin/scan', scan(qr1));
+      expect(autre.statusCode).toBe(403);
+      expect(autre.json().error).toBe('ACTION_INTERDITE');
+    });
+
+    it('scan puis second scan du même billet → doublon avec info du premier', async () => {
+      const premier = await orgaA.post('/checkin/scan', scan(qr1));
+      expect(premier.statusCode).toBe(200);
+      expect(premier.json()).toMatchObject({ resultat: 'ok', rejeu: false, tarif: 'Checkin', premierScan: null });
+
+      const second = await orgaA.post('/checkin/scan', scan(qr1));
+      expect(second.json()).toMatchObject({ resultat: 'doublon', premierScan: { appareil: 'e2e' } });
+      expect(second.json().premierScan.recuA).toBe(premier.json().recuA);
+
+      const forge = await orgaA.post('/checkin/scan', scan(`${qr2.slice(0, -1)}A`));
+      expect(forge.json().resultat).toBe('invalide');
+    });
+
+    it('lot hors ligne rejoué dans le désordre → idempotent par clientScanId', async () => {
+      const a = scan(qr2);
+      const b = scan(qr2);
+      const lot1 = (await orgaA.post('/checkin/scan/batch', { scans: [b, a] })).json();
+      expect(lot1.map((r: { resultat: string }) => r.resultat)).toEqual(['ok', 'doublon']);
+
+      const lot2 = await orgaA.post('/checkin/scan/batch', { scans: [a, b, a] });
+      expect(lot2.statusCode).toBe(200);
+      expect(lot2.json()).toEqual([
+        expect.objectContaining({ clientScanId: a.clientScanId, resultat: 'doublon', rejeu: true }),
+        expect.objectContaining({ clientScanId: b.clientScanId, resultat: 'ok', rejeu: true }),
+        expect.objectContaining({ clientScanId: a.clientScanId, resultat: 'doublon', rejeu: true }),
+      ]);
+
+      const [{ n }] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM billets_scans WHERE client_scan_id IN (${a.clientScanId}::uuid, ${b.clientScanId}::uuid)`;
+      expect(Number(n)).toBe(2);
+    });
+
+    it('lot : une erreur métier n’annule pas les autres scans', async () => {
+      const res = await orgaA.post('/checkin/scan/batch', {
+        scans: [scan(qr1), { ...scan(qr1), evenementId: 999_999_999 }],
+      });
+      expect(res.json()).toEqual([
+        expect.objectContaining({ status: 'done', resultat: 'doublon' }),
+        expect.objectContaining({ status: 'error', error: 'EVENEMENT_INTROUVABLE' }),
+      ]);
+    });
+
+    it('manifeste : billets payés et statut de scan', async () => {
+      const manifest = (await orgaA.get(`/checkin/manifest?evenementId=${fx.eventFutur}`)).json();
+      const mine = manifest.filter((m: { codeVerification: string }) =>
+        [qr1, qr2].some((qr) => qr.endsWith(`.${m.codeVerification}`)),
+      );
+      expect(mine).toHaveLength(2);
+      expect(mine.every((m: { dejaScanne: boolean }) => m.dejaScanne)).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   describe('organisateurs', () => {
     let evenement: number;
     let tarif: number;
