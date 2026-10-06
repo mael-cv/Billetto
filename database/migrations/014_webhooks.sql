@@ -1,11 +1,16 @@
 -- =============================================================================
--- 013_webhooks.sql — Phase 11 : idempotence des webhooks de paiement
+-- 014_webhooks.sql — Phase 11 : idempotence des webhooks de paiement
 --
 -- Un événement vérifié est journalisé et son traitement métier s'exécute dans
 -- la même transaction. Si la confirmation échoue, l'insertion est annulée aussi.
+--
+-- Rejouable : la branche feat/webhook a d'abord livré ce contenu sous le nom
+-- 013_webhooks.sql. Une base qui l'a déjà appliqué reçoit ici une version sans
+-- effet (IF NOT EXISTS / OR REPLACE / DROP POLICY IF EXISTS), et l'ancienne
+-- entrée de schema_migrations est retirée.
 -- =============================================================================
 
-CREATE TABLE paiement_webhooks (
+CREATE TABLE IF NOT EXISTS paiement_webhooks (
     id                   bigint GENERATED ALWAYS AS IDENTITY,
     evenement_externe_id text        NOT NULL,
     type_evenement       text        NOT NULL,
@@ -20,7 +25,7 @@ CREATE TABLE paiement_webhooks (
     CONSTRAINT ck_paiement_webhooks_type_non_vide CHECK (btrim(type_evenement) <> '')
 );
 
-CREATE INDEX ix_paiement_webhooks_reservation_id ON paiement_webhooks (reservation_id);
+CREATE INDEX IF NOT EXISTS ix_paiement_webhooks_reservation_id ON paiement_webhooks (reservation_id);
 
 COMMENT ON TABLE paiement_webhooks IS
     'Événements paiement vérifiés par signature HMAC. La contrainte unique rend les rejeux idempotents.';
@@ -30,23 +35,27 @@ ALTER TABLE paiement_webhooks FORCE ROW LEVEL SECURITY;
 
 -- La réservation assure le rattachement au propriétaire/collectif et filtre
 -- l'accès via les policies RLS déjà en place sur reservations.
+DROP POLICY IF EXISTS p_paiement_webhooks_visiteur_select ON paiement_webhooks;
 CREATE POLICY p_paiement_webhooks_visiteur_select ON paiement_webhooks
     FOR SELECT TO billetto_visiteur
     USING (reservation_id = ANY (ARRAY(SELECT r.id FROM reservations r)));
 
+DROP POLICY IF EXISTS p_paiement_webhooks_organisateur_select ON paiement_webhooks;
 CREATE POLICY p_paiement_webhooks_organisateur_select ON paiement_webhooks
     FOR SELECT TO billetto_organisateur
     USING (reservation_id = ANY (ARRAY(SELECT r.id FROM reservations r)));
 
+DROP POLICY IF EXISTS p_paiement_webhooks_admin_select ON paiement_webhooks;
 CREATE POLICY p_paiement_webhooks_admin_select ON paiement_webhooks
     FOR SELECT TO billetto_admin USING (true);
 
+DROP POLICY IF EXISTS p_paiement_webhooks_readonly_select ON paiement_webhooks;
 CREATE POLICY p_paiement_webhooks_readonly_select ON paiement_webhooks
     FOR SELECT TO billetto_readonly USING (true);
 
 GRANT SELECT ON paiement_webhooks TO billetto_visiteur, billetto_organisateur, billetto_admin, billetto_readonly;
 
-CREATE FUNCTION traiter_paiement_webhook(
+CREATE OR REPLACE FUNCTION traiter_paiement_webhook(
     p_evenement_externe_id text,
     p_type_evenement       text,
     p_reservation_id       bigint,
@@ -121,3 +130,6 @@ GRANT EXECUTE ON FUNCTION traiter_paiement_webhook(text, text, bigint, jsonb)
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 REVOKE ALL ON ALL PROCEDURES IN SCHEMA public FROM PUBLIC;
+
+-- Ancien nom de cette migration (avant renumérotation).
+DELETE FROM schema_migrations WHERE version = '013_webhooks.sql';

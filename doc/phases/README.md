@@ -15,9 +15,9 @@ Chaque fichier décrit : **objectifs**, **spécifications**, **critères d'accep
 | 08 | [Documentation, Docker final, CI](phase-08-docs-ci.md)                 | 🔄 CI et doc base livrées en phase 16 ; README/démos à finir |
 | 09 | [Multi-tenant « collectifs »](phase-09-multi-tenant.md)                | ✅ Livrée     |
 | 10 | [Réservation temporaire (hold) + TTL](phase-10-reservations.md)        | ✅ Livrée     |
-| 11 | [Idempotence webhook paiement](phase-11-webhooks.md)                   | ⬜ À faire    |
+| 11 | [Idempotence webhook paiement](phase-11-webhooks.md)                   | ✅ Livrée (migration 014) |
 | 12 | [Liste d'attente](phase-12-liste-attente.md)                           | ✅ Livrée     |
 | 13 | [Check-in QR, doublons, offline-first](phase-13-checkin.md)            | ✅ Livrée (test mobile manuel à faire) |
 | 14 | [Dashboard temps réel par collectif](phase-14-dashboard-live.md)       | ✅ Livrée     |
 | 15 | [Souhaits secondaires](phase-15-souhaits-secondaires.md)               | ✅ Livrée     |
-| 16 | [Charge, concurrence, durcissement, docs](phase-16-durcissement.md)    | ✅ Livrée hors webhook (dépend de 11) |
+| 16 | [Charge, concurrence, durcissement, docs](phase-16-durcissement.md)    | ✅ Livrée (vague webhook dans test:load à ajouter) |

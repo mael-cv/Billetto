@@ -1,16 +1,23 @@
 # Phase 11 — Idempotence webhook paiement
 
-**Statut : à faire.** Cette phase n'est pas implémentée. Les points de la phase 16 qui en dépendent (charge « webhook inclus », rejeu massif de webhook) restent ouverts.
+**Statut : livrée** (branche `feat/webhook`, migration `014_webhooks.sql`). Développée en parallèle des phases 13 à 16 : sa migration prend le numéro 014 car 013 était déjà attribué à la phase 15.
 
 ## Objectifs
 Un prestataire de paiement notifie l'API par webhook, parfois plusieurs fois et dans le désordre. Chaque événement de paiement ne doit produire son effet (confirmation d'une réservation, création des billets) **qu'une seule fois**.
 
-## Spécifications prévues (todo)
-- Migration `014_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`, RLS dans la même migration (règle de la phase 09).
-- `POST /payments/webhook` avec vérification de signature du prestataire : guard dédié, distinct de l'authentification par session.
-- `INSERT … ON CONFLICT DO NOTHING` dans la même transaction que le traitement métier (`confirmer_reservation`). Un rejeu ne fait rien et renvoie 200.
-- Tests : même événement envoyé deux fois en parallèle, un seul billet créé ; signature invalide rejetée ; rejeu massif dans le scénario de charge (`pnpm test:load`).
+## Migration `014_webhooks.sql`
+- Table `paiement_webhooks` : `UNIQUE (evenement_externe_id)`, lien vers la réservation, payload `jsonb`. RLS activée et forcée dans la même migration (règle de la phase 09) ; aucune écriture directe.
+- `traiter_paiement_webhook(evenement_externe_id, type, reservation_id, payload)` (SECURITY DEFINER) : `INSERT … ON CONFLICT DO NOTHING`, puis, seulement si la ligne est nouvelle, `confirmer_reservation` **dans la même transaction**. Si la confirmation échoue, l'insertion est annulée aussi : un rejeu ultérieur peut réussir.
 
-## Points d'appui déjà en place
-- `confirmer_reservation` verrouille la réservation et refuse une seconde confirmation (`BT032`). Le webhook n'aura qu'à l'appeler.
-- Le paiement par virement attend déjà une confirmation externe : statut `en_attente_virement` et réservation de 72 h (phase 10).
+## API
+- `POST /payments/webhook` : guard dédiée, sans session ni CSRF. Signature HMAC-SHA256 du corps brut avec `PAYMENTS_WEBHOOK_SECRET` (facultatif en développement ; sans secret, les webhooks sont refusés).
+- Un événement déjà reçu renvoie 200 sans rien refaire.
+
+## Tests
+- `database/tests/phase11_webhooks.sql` : idempotence, rollback de l'insertion si la confirmation échoue, RLS.
+- `database/scripts/concurrency.mjs` : le même événement envoyé 40 fois en parallèle → un seul billet.
+- Unitaires : guard de signature. e2e : signature invalide rejetée, signature valide confirme une seule fois.
+- `phase16_isolation.sql` : le garde-fou RLS couvre automatiquement `paiement_webhooks`.
+
+## Reste à faire
+- Une vague webhook dans le scénario de charge `pnpm test:load` (phase 16).
