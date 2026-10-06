@@ -81,6 +81,9 @@ model evenements {
   statut              String                @default("draft")
   created_at          DateTime              @default(now()) @db.Timestamptz(6)
   updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  /// 013 : delai_annulation (interval, non géré par Prisma) est écrit en SQL brut.
+  en_ligne            Boolean               @default(false)
+  fuseau_horaire      String                @default("Europe/Paris")
   evenement_attributs evenement_attributs[]
   lieux               lieux                 @relation(fields: [lieu_id], references: [id], onUpdate: NoAction, map: "fk_evenements_lieu_id")
   organisateurs       organisateurs         @relation(fields: [organisateur_id], references: [id], onUpdate: NoAction, map: "fk_evenements_organisateur_id")

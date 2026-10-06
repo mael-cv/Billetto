@@ -14,6 +14,8 @@ export interface MyTicket extends OrderTicket {
   statutCommande: 'pending' | 'paid' | 'cancelled' | 'refunded';
   /** Contenu du QR de check-in : BT1.<code>.<signature HMAC> (vérifié par scanner_billet). */
   qrPayload: string;
+  /** Annulation self-service possible jusqu'à cette date (délai configurable par événement). */
+  annulationPossibleJusqua: Date | null;
 }
 
 export interface TicketsRepository {

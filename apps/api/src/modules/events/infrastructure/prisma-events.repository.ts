@@ -4,7 +4,15 @@ import type { Tx } from '../../../common/database/db-context.service';
 import { offsetOf } from '../../../common/pagination';
 import { escapeLike, toMoney, toNullableMoney, toNumber } from '../../../common/serialization';
 import type { Pagination } from '../../../common/validation/schemas';
-import type { EventDetail, EventFilters, EventInput, EventSort, EventStatus, EventSummary } from '../domain/event';
+import type {
+  EventDetail,
+  EventFilters,
+  EventInput,
+  EventSort,
+  EventStatus,
+  EventSummary,
+  Participant,
+} from '../domain/event';
 import type { EventsRepository } from '../domain/events.repository';
 
 interface SummaryRow {
@@ -21,6 +29,8 @@ interface SummaryRow {
   type: string;
   organisateur: string;
   prix_min: Prisma.Decimal | null;
+  en_ligne: boolean;
+  fuseau_horaire: string;
 }
 
 interface DetailRow extends Omit<SummaryRow, 'prix_min'> {
@@ -29,6 +39,21 @@ interface DetailRow extends Omit<SummaryRow, 'prix_min'> {
   adresse: string;
   code_postal: string;
   capacite: number;
+  delai_heures: number;
+}
+
+interface ParticipantRow {
+  billet_id: bigint;
+  code: string;
+  tarif: string;
+  prix_paye: Prisma.Decimal;
+  prenom: string;
+  nom: string;
+  commande_id: bigint;
+  statut_commande: string;
+  achete_le: Date;
+  scanne: boolean;
+  scanne_le: Date | null;
 }
 
 interface PriceRow {
@@ -90,7 +115,7 @@ export class PrismaEventsRepository implements EventsRepository {
         SELECT e.id, e.slug, e.nom, e.statut, e.debut, e.fin,
                l.id AS lieu_id, l.nom AS lieu, l.ville,
                te.id AS type_id, te.nom AS type,
-               o.nom AS organisateur, prix.prix_min
+               o.nom AS organisateur, prix.prix_min, e.en_ligne, e.fuseau_horaire
         ${from}
         ORDER BY ${ORDER_BY[filters.sort]}
         LIMIT ${pagination.pageSize} OFFSET ${offsetOf(pagination)}`,
@@ -103,6 +128,8 @@ export class PrismaEventsRepository implements EventsRepository {
     const where = 'id' in ref ? Prisma.sql`e.id = ${ref.id}` : Prisma.sql`e.slug = ${ref.slug}`;
     const rows = await tx.$queryRaw<DetailRow[]>`
       SELECT e.id, e.slug, e.nom, e.description, e.statut, e.debut, e.fin, e.organisateur_id,
+             e.en_ligne, e.fuseau_horaire,
+             (extract(epoch FROM e.delai_annulation) / 3600)::integer AS delai_heures,
              o.nom AS organisateur,
              l.id AS lieu_id, l.nom AS lieu, l.adresse, l.ville, l.code_postal, l.capacite,
              te.id AS type_id, te.nom AS type
@@ -144,6 +171,9 @@ export class PrismaEventsRepository implements EventsRepository {
         capacite: row.capacite,
       },
       type: { id: toNumber(row.type_id), nom: row.type },
+      enLigne: row.en_ligne,
+      fuseauHoraire: row.fuseau_horaire,
+      delaiAnnulationHeures: row.delai_heures,
       attributs,
       tarifs: tarifs.map((t) => ({
         id: toNumber(t.id),
@@ -170,13 +200,26 @@ export class PrismaEventsRepository implements EventsRepository {
         debut: input.debut,
         fin: input.fin,
         statut: input.statut,
+        ...(input.enLigne !== undefined && { en_ligne: input.enLigne }),
+        ...(input.fuseauHoraire !== undefined && { fuseau_horaire: input.fuseauHoraire }),
       },
       select: { id: true },
     });
-    return toNumber(created.id);
+    const id = toNumber(created.id);
+    if (input.delaiAnnulationHeures !== undefined) await this.setDelai(tx, id, input.delaiAnnulationHeures);
+    return id;
   }
 
-  async update(tx: Tx, id: number, input: Partial<EventInput>): Promise<number> {
+  // delai_annulation est un interval, type non géré par le client Prisma.
+  private setDelai(tx: Tx, id: number, heures: number): Promise<number> {
+    return tx.$executeRaw`
+      UPDATE evenements SET delai_annulation = make_interval(hours => ${heures}::integer) WHERE id = ${id}`;
+  }
+
+  async update(tx: Tx, id: number, patch: Partial<EventInput>): Promise<number> {
+    const { delaiAnnulationHeures, ...input } = patch;
+    const delaiCount = delaiAnnulationHeures === undefined ? 0 : await this.setDelai(tx, id, delaiAnnulationHeures);
+    if (Object.values(input).every((v) => v === undefined)) return delaiCount;
     const result = await tx.evenements.updateMany({
       where: { id: BigInt(id) },
       data: {
@@ -188,6 +231,8 @@ export class PrismaEventsRepository implements EventsRepository {
         ...(input.statut !== undefined && { statut: input.statut }),
         ...(input.lieuId !== undefined && { lieu_id: BigInt(input.lieuId) }),
         ...(input.typeEvenementId !== undefined && { type_evenement_id: BigInt(input.typeEvenementId) }),
+        ...(input.enLigne !== undefined && { en_ligne: input.enLigne }),
+        ...(input.fuseauHoraire !== undefined && { fuseau_horaire: input.fuseauHoraire }),
       },
     });
     return result.count;
@@ -200,6 +245,26 @@ export class PrismaEventsRepository implements EventsRepository {
         data: attributes.map((a) => ({ evenement_id: BigInt(id), cle: a.cle, valeur: a.valeur })),
       });
     }
+  }
+
+  async participants(tx: Tx, id: number): Promise<Participant[]> {
+    const rows = await tx.$queryRaw<ParticipantRow[]>`
+      SELECT billet_id, code::text AS code, tarif, prix_paye, prenom, nom, commande_id, statut_commande,
+             achete_le, scanne, scanne_le
+      FROM participants_evenement(${id}::bigint)`;
+    return rows.map((r) => ({
+      billetId: toNumber(r.billet_id),
+      code: r.code,
+      tarif: r.tarif,
+      prixPaye: toMoney(r.prix_paye),
+      prenom: r.prenom,
+      nom: r.nom,
+      commandeId: toNumber(r.commande_id),
+      statutCommande: r.statut_commande,
+      acheteLe: r.achete_le,
+      scanne: r.scanne,
+      scanneLe: r.scanne_le,
+    }));
   }
 
   async delete(tx: Tx, id: number): Promise<number> {
@@ -220,5 +285,7 @@ function toSummary(row: SummaryRow): EventSummary {
     type: { id: toNumber(row.type_id), nom: row.type },
     organisateur: row.organisateur,
     prixMin: toNullableMoney(row.prix_min),
+    enLigne: row.en_ligne,
+    fuseauHoraire: row.fuseau_horaire,
   };
 }

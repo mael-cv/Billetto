@@ -97,7 +97,15 @@ export class PrismaOrdersRepository implements OrdersRepository {
       FROM billets_utilisateur(${userId}::bigint)
       WHERE commande_id = ${orderId}
       ORDER BY billet_id`;
-    return { ...toSummary(order), utilisateurId: toNumber(order.utilisateur_id), billets: tickets.map(toTicket) };
+    // limite_annulation : NULL pour la commande d'un autre (contrôle en base).
+    const [limite] = await tx.$queryRaw<{ limite: Date | null }[]>`
+      SELECT limite_annulation(${orderId}::bigint) AS limite`;
+    return {
+      ...toSummary(order),
+      utilisateurId: toNumber(order.utilisateur_id),
+      billets: tickets.map(toTicket),
+      annulationPossibleJusqua: limite?.limite ?? null,
+    };
   }
 
   async findAny(tx: Tx, orderId: number): Promise<OrderDetail | null> {
@@ -112,7 +120,12 @@ export class PrismaOrdersRepository implements OrdersRepository {
       JOIN lieux l      ON l.id = e.lieu_id
       WHERE b.commande_id = ${orderId}
       ORDER BY b.id`;
-    return { ...toSummary(order), utilisateurId: toNumber(order.utilisateur_id), billets: tickets.map(toTicket) };
+    return {
+      ...toSummary(order),
+      utilisateurId: toNumber(order.utilisateur_id),
+      billets: tickets.map(toTicket),
+      annulationPossibleJusqua: null,
+    };
   }
 
   async refundAsOwner(tx: Tx, orderId: number): Promise<void> {

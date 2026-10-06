@@ -75,3 +75,12 @@ export function attributeValue(cle: string, valeur: string): string {
   if (valeur === "non") return "Non";
   return valeur;
 }
+
+/**
+ * Annulation self-service : possible jusqu'à « début - délai d'annulation »
+ * (configurable par l'organisateur). L'échéance vient de l'API ; le refus réel
+ * après le délai est appliqué par PostgreSQL (BT014).
+ */
+export function cancellationOpen(t: { annulationPossibleJusqua: string | null }, now = new Date()): boolean {
+  return t.annulationPossibleJusqua === null || new Date(t.annulationPossibleJusqua) > now;
+}

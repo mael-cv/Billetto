@@ -48,7 +48,7 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `013_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [ ] Migration `014_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
 - [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
 - [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
 - [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé
@@ -79,11 +79,11 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : isolation multi-tenant du flux, cohérence des chiffres sous charge — `database/tests/phase14_dashboard.sql` (RLS organisateur A/B), test 10 de `concurrency.mjs` (30 lectures pendant 40 achats/holds), e2e `dashboard live`
 
 ## Phase 15 — Souhaits secondaires
-- [ ] Annulation self-service : délai configurable, appel autorisé depuis le compte utilisateur (pas seulement organisateur/admin)
-- [ ] Email de confirmation avec billet (déclenché à la confirmation de commande et à la réponse waitlist), QR joint si phase 13 livrée
-- [ ] Export CSV participants : `GET /events/:id/participants/export`
-- [ ] Fuseaux horaires : vérifier `timestamptz`, ajouter fuseau d'affichage explicite pour événements en ligne, conversion front (`Intl.DateTimeFormat`)
-- [ ] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte
+- [x] Annulation self-service : délai configurable, appel autorisé depuis le compte utilisateur (pas seulement organisateur/admin) — `evenements.delai_annulation` (48 h par défaut, réglable par l’organisateur), BT014 → 409 `DELAI_ANNULATION_DEPASSE`, admin non soumis au délai ; échéance affichée sur « Mes billets »
+- [x] Email de confirmation avec billet (déclenché à la confirmation de commande et à la réponse waitlist), QR joint si phase 13 livrée — outbox `emails_sortants` alimentée par trigger (commande payée, offre de liste d’attente), job API `EmailOutboxJob` + nodemailer, QR en PNG joints ; Mailpit en dev
+- [x] Export CSV participants : `GET /events/:id/participants/export` — `participants_evenement` (organisateur de l’événement ou admin), CSV « ; » + BOM, injection de formules neutralisée
+- [x] Fuseaux horaires : vérifier `timestamptz`, ajouter fuseau d'affichage explicite pour événements en ligne, conversion front (`Intl.DateTimeFormat`) — `evenements.fuseau_horaire` + `en_ligne`, aucune colonne `timestamp` sans fuseau, saisie et affichage dans le fuseau de l’événement (`lib/format.ts`)
+- [x] Test : annulation refusée après délai, export CSV cohérent, heure locale visiteur correcte — `database/tests/phase15_souhaits.sql`, e2e « souhaits secondaires », `tests/timezones.spec.ts`, `csv.spec.ts`, `notifications.spec.ts`
 
 ## Phase 16 — Charge, concurrence, durcissement, documentation
 - [ ] Scénario de charge combiné (holds + confirmations + expiration + liste d'attente) sur tarif en forte contention, zéro survente via API complète (webhook inclus)

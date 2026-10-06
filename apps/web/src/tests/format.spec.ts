@@ -39,13 +39,13 @@ describe("lib/format", () => {
     });
 
     it("formate l'heure au fuseau Europe/Paris", () => {
-      const res = formatTime(iso);
+      const res = formatTime(iso, "Europe/Paris");
       // 20:00 UTC = 22:00 heure d'été à Paris
       expect(res).toMatch(/22:00/);
     });
 
     it("formate date et heure complètes", () => {
-      const res = formatDateTime(iso);
+      const res = formatDateTime(iso, "Europe/Paris");
       expect(res).toContain("16/09/2026");
       expect(res).toContain("22:00");
     });

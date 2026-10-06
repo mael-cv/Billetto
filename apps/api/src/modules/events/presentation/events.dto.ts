@@ -39,6 +39,15 @@ export const eventRefSchema = z.union([idSchema.transform((id) => ({ id })), slu
 
 const slugNonNumerique = slugSchema.refine((s) => !/^\d+$/.test(s), 'le slug ne peut pas être uniquement numérique');
 
+// Fuseaux IANA connus du runtime (PostgreSQL revérifie : BT015).
+const TIME_ZONES = new Set(Intl.supportedValuesOf('timeZone'));
+const fuseauHoraire = z
+  .string()
+  .trim()
+  .refine((tz) => tz === 'UTC' || TIME_ZONES.has(tz), 'fuseau horaire IANA inconnu (ex. Europe/Paris)');
+// Délai d'annulation en heures : 0 à 30 jours (ck_evenements_delai_annulation).
+const delaiAnnulationHeures = z.coerce.number().int().min(0).max(720);
+
 const eventFields = {
   nom: text(200),
   slug: slugNonNumerique,
@@ -55,6 +64,9 @@ export const createEventSchema = z
     description: eventFields.description.default(''),
     statut: z.enum(['draft', 'published']).default('draft'),
     organisateurId: idSchema.optional(),
+    enLigne: z.boolean().default(false),
+    fuseauHoraire: fuseauHoraire.default('Europe/Paris'),
+    delaiAnnulationHeures: delaiAnnulationHeures.default(48),
   })
   .refine((e) => e.fin > e.debut, { message: 'fin doit être postérieure à debut', path: ['fin'] });
 
@@ -68,6 +80,9 @@ export const updateEventSchema = z
     lieuId: eventFields.lieuId.optional(),
     typeEvenementId: eventFields.typeEvenementId.optional(),
     statut: statut.optional(),
+    enLigne: z.boolean().optional(),
+    fuseauHoraire: fuseauHoraire.optional(),
+    delaiAnnulationHeures: delaiAnnulationHeures.optional(),
   })
   .refine((e) => Object.keys(e).length > 0, 'au moins un champ à modifier')
   .refine((e) => !(e.debut && e.fin) || e.fin > e.debut, { message: 'fin doit être postérieure à debut', path: ['fin'] });
