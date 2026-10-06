@@ -1,6 +1,7 @@
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from 'node:path'
 
 import fs from 'node:fs'
@@ -29,6 +30,9 @@ export default defineConfig(({ mode }) => {
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      // `pnpm dev:https` : certificat auto-signé pour tester le check-in caméra
+      // depuis un téléphone du réseau local (getUserMedia exige HTTPS hors localhost).
+      mode === 'https' ? basicSsl() : null,
     ],
     resolve: {
       alias: {

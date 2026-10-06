@@ -1,4 +1,5 @@
 // Appels de l'API REST, un par endpoint (voir doc/api.md).
+import type { PendingScan } from "./checkinQueue";
 import { http } from "./http";
 import type {
   AdminUser,
@@ -24,6 +25,9 @@ import type {
   TicketPrice,
   User,
   Venue,
+  CheckinManifestEntry,
+  ScanBatchItem,
+  ScanOutcome,
   WaitlistEntry,
   WaitlistQueueItem,
 } from "./types";
@@ -110,6 +114,12 @@ export const api = {
   confirmWaitlist: (id: number) => http<PurchaseResult>("POST", `/waitlist/${id}/confirm`),
   cancelWaitlist: (id: number) => http<void>("DELETE", `/waitlist/${id}`),
   tarifWaitlist: (tarifId: number) => http<WaitlistQueueItem[]>("GET", `/waitlist/tarifs/${tarifId}`),
+
+  // Check-in : clientScanId rend chaque scan idempotent (rejeux offline).
+  scan: (scan: PendingScan) => http<ScanOutcome>("POST", "/checkin/scan", { body: scan }),
+  scanBatch: (scans: PendingScan[]) => http<ScanBatchItem[]>("POST", "/checkin/scan/batch", { body: { scans } }),
+  checkinManifest: (evenementId: number) =>
+    http<CheckinManifestEntry[]>("GET", "/checkin/manifest", { query: { evenementId } }),
 
   // Statistiques
   summary: () => http<SalesSummary>("GET", "/analytics/summary"),

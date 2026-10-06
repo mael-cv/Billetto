@@ -8,6 +8,7 @@ export interface Fixtures {
   tarifQuota5: number;
   tarifConcurrence: number;
   tarifAttente: number;
+  tarifCheckin: number;
   eventCommence: number;
   tarifCommence: number;
   eventDraftB: number;
@@ -53,6 +54,7 @@ export async function createFixtures(): Promise<Fixtures> {
   const tarifQuota5 = await tarif(eventFutur, 'Quota 5', 5, '-1 day', '29 days');
   const tarifConcurrence = await tarif(eventFutur, 'Concurrence', 10, '-1 day', '29 days');
   const tarifAttente = await tarif(eventFutur, 'Attente', 1, '-1 day', '29 days');
+  const tarifCheckin = await tarif(eventFutur, 'Checkin', 5, '-1 day', '29 days');
   const eventCommence = await event(orgaA, 'e2e-commence', '-1 hour', 'published');
   const tarifCommence = await tarif(eventCommence, 'Standard', 50, '-10 days', '-2 hours');
   const eventDraftB = await event(orgaB, 'e2e-brouillon-b', '40 days', 'draft');
@@ -65,6 +67,7 @@ export async function createFixtures(): Promise<Fixtures> {
     tarifQuota5: Number(tarifQuota5),
     tarifConcurrence: Number(tarifConcurrence),
     tarifAttente: Number(tarifAttente),
+    tarifCheckin: Number(tarifCheckin),
     eventCommence: Number(eventCommence),
     tarifCommence: Number(tarifCommence),
     eventDraftB: Number(eventDraftB),
@@ -89,6 +92,7 @@ export async function cleanFixtures(): Promise<void> {
       LEFT JOIN tarifs t  ON t.id = b.tarif_id
       WHERE c.utilisateur_id = ANY(${userIds}::bigint[]) OR t.evenement_id = ANY(${eventIds}::bigint[])`;
     const orderIds = orders.map((o) => o.id);
+    await tx.$executeRaw`DELETE FROM billets_scans WHERE evenement_id = ANY(${eventIds}::bigint[])`;
     // Liste d'attente et offres (réservations) des tarifs de test, avant les commandes (FK).
     await tx.$executeRaw`
       DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ANY(${eventIds}::bigint[]))`;
