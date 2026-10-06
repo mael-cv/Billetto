@@ -48,19 +48,19 @@ Phase 16 (Charge/concurrence, durcissement, docs/CI)
 - [x] Test : hold expiré ne bloque plus le quota (aussi pour `acheter_billet`) ; achat direct bloqué par des holds actifs ; purge sans effet sur les holds actifs
 
 ## Phase 11 — Idempotence webhook paiement
-- [ ] Migration `010_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
+- [ ] Migration `011_webhooks.sql` : table `paiement_webhooks` avec `UNIQUE (evenement_externe_id)`
 - [ ] Endpoint `POST /payments/webhook` avec vérification de signature prestataire (guard dédié, distinct des guards par session)
 - [ ] Logique `INSERT ... ON CONFLICT DO NOTHING` + traitement métier dans la même transaction que l'insertion d'idempotence
 - [ ] Test : envoi du même événement webhook deux fois en parallèle → un seul billet créé
 - [ ] Test : signature invalide rejetée
 
 ## Phase 12 — Liste d'attente
-- [ ] Migration `010_liste_attente.sql` : table `liste_attente` (`tarif_id, utilisateur_id, quantite_souhaitee, statut, notifie_a, expire_a`)
-- [ ] Fonction `notifier_prochain_en_attente(tarif_id)` avec `FOR UPDATE SKIP LOCKED`, FIFO par `created_at`
-- [ ] Définir le déclencheur canonique unique de libération de place (éviter doublons/oublis de notification)
-- [ ] Nouveau module API `waitlist` : `POST /waitlist`, `GET /waitlist/me`, `POST /waitlist/:id/confirm`, vue organisateur par tarif
-- [ ] Front : bouton "s'inscrire en liste d'attente" sur `EventDetail`, écran de confirmation avec délai
-- [ ] Test : désistement notifie le bon utilisateur (FIFO strict), non-réponse passe au suivant, pas de fuite de place
+- [x] Migration `010_liste_attente.sql` : table `liste_attente` (`tarif_id, utilisateur_id, quantite_souhaitee, statut, notifie_a, expire_a`)
+- [x] Fonction `notifier_prochain_en_attente(tarif_id)` avec `FOR UPDATE SKIP LOCKED`, FIFO par `created_at` — offre = réservation à TTL 30 min (réutilise `places_occupees` et `confirmer_reservation`)
+- [x] Définir le déclencheur canonique unique de libération de place (éviter doublons/oublis de notification) — `traiter_liste_attente(tarif)` idempotente, appelée par triggers (commande refunded/cancelled, réservation annulee/expiree) + balayage `traiter_listes_attente()` dans `ReservationsPurgeJob`
+- [x] Nouveau module API `waitlist` : `POST /waitlist`, `GET /waitlist/me`, `POST /waitlist/:id/confirm`, vue organisateur par tarif (+ `DELETE /waitlist/:id`, `GET /waitlist/tarifs/:tarifId`)
+- [x] Front : bouton "s'inscrire en liste d'attente" sur `EventDetail`, écran de confirmation avec délai ; page `/waitlist` (compte à rebours), badge d’offre dans l’en-tête, files par tarif pour l’organisateur
+- [x] Test : désistement notifie le bon utilisateur (FIFO strict), non-réponse passe au suivant, pas de fuite de place — `database/tests/phase12_liste_attente.sql`, test 8 de `concurrency.mjs`, scénario e2e `liste d’attente`
 
 ## Phase 13 — Check-in QR avec détection de doublon, offline-first
 - [ ] Migration `011_checkin.sql` : colonne `billets.code_verification` (token signé) si absente

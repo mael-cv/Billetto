@@ -4,7 +4,8 @@ import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
 import type { Role } from "../lib/types";
 import { Button, Link } from "./ui";
-import { IconClose, IconMenu, IconSearch, IconTicket, IconUser } from "./icons";
+import { IconClock, IconClose, IconMenu, IconSearch, IconTicket, IconUser } from "./icons";
+import { useMyWaitlist } from "../lib/queries";
 
 // Les entrées réservées sont masquées selon le rôle ; l'API les refuse de toute façon.
 const NAV: { to: string; label: string; roles?: Role[] }[] = [
@@ -81,6 +82,7 @@ export function Header() {
               </span>
             )}
           </Link>
+          {user && <WaitlistOffersLink />}
           {user ? (
             <div className="hidden items-center gap-2 sm:flex">
               <Link to="/account">
@@ -130,6 +132,13 @@ export function Header() {
                 {n.label}
               </Link>
             ))}
+            <Link
+              to="/waitlist"
+              onClick={() => setOpen(false)}
+              className="rounded-[10px] px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-elevated hover:text-foreground"
+            >
+              Liste d'attente
+            </Link>
             <Link
               to="/tickets"
               onClick={() => setOpen(false)}
@@ -241,4 +250,23 @@ export function Page({ children, wide }: { children: ReactNode; wide?: boolean }
     window.scrollTo(0, 0);
   }, [path]);
   return <main className={`mx-auto w-full px-5 ${wide ? "max-w-[1240px]" : "max-w-[1080px]"}`}>{children}</main>;
+}
+
+// Offres de liste d'attente en cours : visible uniquement s'il y en a.
+function WaitlistOffersLink() {
+  const { data } = useMyWaitlist(true);
+  const offers = data?.filter((e) => e.statut === "notifiee").length ?? 0;
+  if (offers === 0) return null;
+  return (
+    <Link
+      to="/waitlist"
+      className="relative flex size-10 items-center justify-center rounded-[11px] text-primary transition-colors hover:bg-elevated"
+    >
+      <span className="sr-only">Offres de liste d'attente</span>
+      <IconClock />
+      <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+        {offers}
+      </span>
+    </Link>
+  );
 }

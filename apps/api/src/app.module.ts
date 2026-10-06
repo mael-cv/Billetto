@@ -13,6 +13,7 @@ import { PricingModule } from './modules/pricing/pricing.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { UsersModule } from './modules/users/users.module';
 import { VenuesModule } from './modules/venues/venues.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
 
 @Module({})
 export class AppModule {
@@ -33,6 +34,7 @@ export class AppModule {
         TicketsModule,
         UsersModule,
         AnalyticsModule,
+        WaitlistModule,
       ],
     };
   }
