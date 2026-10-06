@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Qualité du code : lint, types, tests unitaires, build (sans base de données)
+  # ---------------------------------------------------------------------------
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Client Prisma
+        run: pnpm --filter @billetto/api prisma:generate
+      - name: Lint
+        run: pnpm lint
+      - name: Types (API et web)
+        run: |
+          pnpm --filter @billetto/api exec tsc --noEmit -p tsconfig.json
+          pnpm --filter @billetto/web exec tsc --noEmit -p tsconfig.json
+      - name: Tests unitaires
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+
+  # ---------------------------------------------------------------------------
+  # Base réelle (PostgreSQL 17 via docker compose, comme en local) :
+  # migrations, seeds, tests SQL + concurrence + isolation, e2e API, charge.
+  # ---------------------------------------------------------------------------
+  database:
+    runs-on: ubuntu-latest
+    needs: checks
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @billetto/api prisma:generate
+
+      - name: Environnement de CI (.env à partir de .env.example, secrets éphémères)
+        run: |
+          cp .env.example .env
+          PG_PASSWORD="ci-$(openssl rand -hex 12)"
+          APP_PASSWORD="ci-app-$(openssl rand -hex 12)"
+          sed -i \
+            -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASSWORD}|" \
+            -e "s|^PGADMIN_DEFAULT_PASSWORD=.*|PGADMIN_DEFAULT_PASSWORD=ci-$(openssl rand -hex 8)|" \
+            -e "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://billetto_owner:${PG_PASSWORD}@localhost:5433/billetto|" \
+            -e "s|^APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${APP_PASSWORD}|" \
+            -e "s|^APP_DATABASE_URL=.*|APP_DATABASE_URL=postgresql://billetto_app:${APP_PASSWORD}@localhost:5433/billetto|" \
+            -e "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" \
+            -e "s|^SMTP_URL=.*|SMTP_URL=|" \
+            .env
+
+      - name: PostgreSQL
+        run: docker compose up -d --wait postgres
+
+      - name: Migrations et données
+        run: |
+          pnpm db:migrate
+          pnpm db:seed:small
+          pnpm db:seed:demo
+
+      - name: Tests SQL, concurrence et isolation RLS
+        run: pnpm db:test
+
+      - name: Tests e2e API
+        run: pnpm test:e2e
+
+      - name: Charge combinée (holds, confirmations, expiration, liste d'attente)
+        run: pnpm test:load
+        env:
+          LOAD_USERS: 100
+
+      - name: Journaux PostgreSQL en cas d'échec
+        if: failure()
+        run: docker compose logs postgres --tail 200

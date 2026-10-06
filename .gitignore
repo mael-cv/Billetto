@@ -22,8 +22,7 @@ logs/
 
 !.env.example
 
-# Documentation et instructions agents (non versionnées)
+# Instructions agents (non versionnées). La documentation doc/ est versionnée.
 /CLAUDE.md
 /AGENTS.md
-/doc/
 /docs/
