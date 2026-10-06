@@ -10,11 +10,14 @@ import {
   type DailySales,
   type EventSales,
   type EventSalesSort,
+  type LiveDashboard,
   type PriceAuditEntry,
   type RecentOrder,
   type SalesSummary,
   type VenueRanking,
 } from '../domain/analytics';
+
+const LIVE_LIMIT = 50;
 
 /**
  * Les mêmes endpoints servent organisateurs et administrateurs : la RLS et les
@@ -53,6 +56,27 @@ export class AnalyticsUseCases {
         ? this.analytics.dailySalesFromMaterializedView(tx, from, to)
         : this.analytics.dailySalesFromTables(tx, from, to),
     );
+  }
+
+  /**
+   * Dashboard temps réel (polling court) : lecture directe des vues, jamais de
+   * la vue matérialisée, pour refléter les ventes et holds de la seconde.
+   * Les totaux sont calculés sur les mêmes lignes que le détail.
+   */
+  async live(actor: Actor): Promise<LiveDashboard> {
+    const evenements = await this.db.run(toDbActor(actor), (tx) => this.analytics.live(tx, LIVE_LIMIT));
+    const sum = (pick: (e: (typeof evenements)[number]) => number) => evenements.reduce((n, e) => n + pick(e), 0);
+    return {
+      generatedAt: new Date(),
+      totaux: {
+        places: sum((e) => e.places),
+        vendus: sum((e) => e.vendus),
+        reserves: sum((e) => e.reserves),
+        enAttente: sum((e) => e.enAttente),
+        chiffreAffaires: sum((e) => Number(e.chiffreAffaires)).toFixed(2),
+      },
+      evenements,
+    };
   }
 
   priceAudit(actor: Actor, limit: number): Promise<PriceAuditEntry[]> {

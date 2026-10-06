@@ -495,6 +495,62 @@ describe('API Billetto (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('dashboard live', () => {
+    interface LiveEvent {
+      evenementId: number;
+      vendus: number;
+      reserves: number;
+      enAttente: number;
+      places: number;
+    }
+    const liveOf = async (client: Client) => {
+      const res = await client.get('/analytics/live');
+      expect(res.statusCode).toBe(200);
+      return res.json() as { totaux: { vendus: number; reserves: number }; evenements: LiveEvent[] };
+    };
+    const futur = (live: { evenements: LiveEvent[] }) => live.evenements.find((e) => e.evenementId === fx.eventFutur);
+
+    it('accès : visiteur 403 ; réponse jamais mise en cache', async () => {
+      expect((await visiteur.get('/analytics/live')).statusCode).toBe(403);
+      expect((await orgaA.get('/analytics/live')).headers['cache-control']).toBe('no-store');
+    });
+
+    it('un achat et un hold apparaissent immédiatement (vendu / réservé)', async () => {
+      const avant = futur(await liveOf(orgaA));
+      if (!avant) throw new Error('événement de test absent du dashboard live');
+
+      expect((await visiteur.post('/tickets/purchase', { tarifId: fx.tarifLive, quantite: 2 })).statusCode).toBe(201);
+      expect((await visiteur.post('/orders/hold', { tarifId: fx.tarifLive, quantite: 1, modePaiement: 'virement' })).statusCode).toBe(201);
+
+      const apres = futur(await liveOf(orgaA));
+      expect(apres).toMatchObject({ vendus: avant.vendus + 2, reserves: avant.reserves + 1 });
+    });
+
+    it('chiffres identiques aux comptes directs en base', async () => {
+      const live = futur(await liveOf(orgaA));
+      const [base = { vendus: -1n, reserves: -1n, attente: -1n }] = await owner.$queryRaw<
+        { vendus: bigint; reserves: bigint; attente: bigint }[]
+      >`
+        SELECT (SELECT count(*) FROM billets b JOIN commandes c ON c.id = b.commande_id JOIN tarifs t ON t.id = b.tarif_id
+                WHERE t.evenement_id = ${fx.eventFutur} AND c.statut = 'paid') AS vendus,
+               (SELECT coalesce(sum(r.quantite), 0) FROM reservations r JOIN tarifs t ON t.id = r.tarif_id
+                WHERE t.evenement_id = ${fx.eventFutur} AND r.statut = 'active' AND r.expire_a > now()) AS reserves,
+               (SELECT coalesce(sum(la.quantite_souhaitee), 0) FROM liste_attente la JOIN tarifs t ON t.id = la.tarif_id
+                WHERE t.evenement_id = ${fx.eventFutur} AND la.statut = 'en_attente') AS attente`;
+      expect(live).toMatchObject({ vendus: Number(base.vendus), reserves: Number(base.reserves), enAttente: Number(base.attente) });
+    });
+
+    it('isolation multi-tenant : l’organisateur B ne voit pas les événements de A', async () => {
+      const liveB = await liveOf(orgaB);
+      expect(futur(liveB)).toBeUndefined();
+      const [{ autres }] = await owner.$queryRaw<{ autres: bigint }[]>`
+        SELECT count(*) AS autres FROM evenements
+        WHERE id = ANY(${liveB.evenements.map((e) => e.evenementId)}::bigint[]) AND organisateur_id <> ${fx.orgaB}`;
+      expect(Number(autres)).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   describe('organisateurs', () => {
     let evenement: number;
     let tarif: number;

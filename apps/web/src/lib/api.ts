@@ -21,6 +21,7 @@ import type {
   Reservation,
   Role,
   SalesSummary,
+  LiveDashboard,
   Scope,
   TicketPrice,
   User,
@@ -123,6 +124,7 @@ export const api = {
 
   // Statistiques
   summary: () => http<SalesSummary>("GET", "/analytics/summary"),
+  live: () => http<LiveDashboard>("GET", "/analytics/live"),
   eventSales: (sort: "ca" | "billets" | "taux" | "date", page = 1, pageSize = 20) =>
     http<Page<EventSales>>("GET", "/analytics/events", { query: { sort, page, pageSize } }),
   dailySales: (from: string, to: string) => http<DailySales[]>("GET", "/analytics/daily-sales", { query: { from, to } }),

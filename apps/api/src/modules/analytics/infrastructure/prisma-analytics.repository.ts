@@ -9,6 +9,7 @@ import type {
   DailySales,
   EventSales,
   EventSalesSort,
+  LiveEvent,
   PriceAuditEntry,
   RecentOrder,
   SalesSummary,
@@ -88,6 +89,40 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
       tauxRemplissageMoyen: null,
       source: 'vue_materialisee',
     };
+  }
+
+  async live(tx: Tx, limit: number): Promise<LiveEvent[]> {
+    const rows = await tx.$queryRaw<
+      {
+        evenement_id: bigint;
+        nom: string;
+        debut: Date;
+        places: bigint;
+        billets_vendus: bigint;
+        billets_reserves: bigint;
+        places_liste_attente: bigint;
+        taux_occupation: number | null;
+        ca: Prisma.Decimal;
+      }[]
+    >`
+      SELECT r.evenement_id, r.nom, r.debut, r.places, r.billets_vendus, r.billets_reserves,
+             r.places_liste_attente, r.taux_occupation::float8 AS taux_occupation, v.ca
+      FROM v_remplissage r
+      JOIN v_ventes_par_evenement v ON v.evenement_id = r.evenement_id
+      WHERE r.statut = 'published' AND r.debut > now()
+      ORDER BY r.debut, r.evenement_id
+      LIMIT ${limit}`;
+    return rows.map((r) => ({
+      evenementId: toNumber(r.evenement_id),
+      nom: r.nom,
+      debut: r.debut,
+      places: toNumber(r.places),
+      vendus: toNumber(r.billets_vendus),
+      reserves: toNumber(r.billets_reserves),
+      enAttente: toNumber(r.places_liste_attente),
+      tauxOccupation: r.taux_occupation,
+      chiffreAffaires: toMoney(r.ca),
+    }));
   }
 
   async eventSales(tx: Tx, sort: EventSalesSort, pagination: Pagination) {
