@@ -26,6 +26,7 @@ export class LoginUseCase {
 
     return {
       userId: stored.userId,
+      authVersion: stored.authVersion,
       role: stored.role,
       organisateurId: stored.organisateurId,
       email: normalizedEmail,

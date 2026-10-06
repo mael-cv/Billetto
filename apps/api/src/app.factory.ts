@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -9,7 +10,7 @@ import { CSRF_HEADER } from './auth/presentation/cookies';
 import type { AppConfig } from './common/config/config';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 
-const AUTH_ROUTES = /^\/api\/v1\/auth\/(login|register)$/;
+const AUTH_ROUTES = /^\/api\/v1\/auth\/(login|register|password)$/;
 
 /** Construit l'application (partagé entre main.ts et les tests e2e). */
 export async function createApp(config: AppConfig): Promise<NestFastifyApplication> {
@@ -17,7 +18,13 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
   const adapter = new FastifyAdapter({
     // Limite de taille des corps de requête (déni de service, OWASP).
     bodyLimit: 64 * 1024,
+    requestTimeout: 30_000,
+    maxParamLength: 128,
+    http: { maxHeaderSize: 16 * 1024 },
     trustProxy: false,
+    // Un appelant ne peut pas choisir l'identifiant repris dans les logs/erreurs.
+    requestIdHeader: false,
+    genReqId: () => randomUUID(),
     logger: silent
       ? false
       : {

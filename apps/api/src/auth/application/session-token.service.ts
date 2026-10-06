@@ -8,6 +8,7 @@ const HEADER = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toStrin
 
 const claimsSchema = z.object({
   sub: z.number().int().positive(),
+  ver: z.number().int().nonnegative(),
   role: z.enum(['visitor', 'organizer', 'admin']),
   org: z.number().int().positive().nullable(),
   email: z.string(),
@@ -34,6 +35,7 @@ export class SessionTokenService {
     const payload = Buffer.from(
       JSON.stringify({
         sub: actor.userId,
+        ver: actor.authVersion,
         role: actor.role,
         org: actor.organisateurId,
         email: actor.email,
@@ -68,6 +70,7 @@ export class SessionTokenService {
 
     return {
       userId: claims.data.sub,
+      authVersion: claims.data.ver,
       role: claims.data.role,
       organisateurId: claims.data.org,
       email: claims.data.email,

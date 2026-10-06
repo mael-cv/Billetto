@@ -24,6 +24,7 @@ export function setSessionCookie(reply: FastifyReply, token: string, config: App
 
 export function clearSessionCookie(reply: FastifyReply, config: AppConfig): void {
   void reply.clearCookie(SESSION_COOKIE, { ...base(config), httpOnly: true });
+  void reply.clearCookie(CSRF_COOKIE, { ...base(config), httpOnly: false });
 }
 
 /**

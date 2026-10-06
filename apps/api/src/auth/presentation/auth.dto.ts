@@ -16,5 +16,11 @@ export const registerSchema = z.strictObject({
   nom: text(80),
 });
 
+export const changePasswordSchema = z.strictObject({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(12, '12 caractères minimum').max(128),
+});
+
 export type LoginDto = z.infer<typeof loginSchema>;
 export type RegisterDto = z.infer<typeof registerSchema>;
+export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;

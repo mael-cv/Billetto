@@ -1,11 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDateTime, formatEUR } from "../lib/format";
 import { keys } from "../lib/queries";
 import { useRouter } from "../lib/router";
 import { useStore } from "../lib/store";
-import { Badge, Button, Card, EmptyState, ErrorState, Link, Skeleton } from "../components/ui";
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, Input, Link, Skeleton } from "../components/ui";
 import { IconChart, IconShield, IconTicket, IconUser } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 import { OrderStatusBadge } from "./OrganizerEvents";
@@ -17,8 +18,32 @@ export function AccountPage() {
   const { toast } = useStore();
   const { navigate } = useRouter();
   const orders = useQuery({ queryKey: keys.myOrders, queryFn: () => api.myOrders(1, 10) });
+  const queryClient = useQueryClient();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   if (!user) return null;
+
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError("");
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      setPasswordError("Le nouveau mot de passe doit contenir entre 12 et 128 caractères.");
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      queryClient.clear();
+      navigate("/login");
+    } catch {
+      setPasswordError("Changement impossible. Vérifiez le mot de passe actuel et réessayez.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
 
   return (
     <>
@@ -114,6 +139,24 @@ export function AccountPage() {
                 </Card>
               ))}
           </div>
+        </section>
+
+        <section className="mt-10 max-w-xl">
+          <h2 className="font-display text-xl font-bold">Sécurité du compte</h2>
+          <Card className="mt-4 p-6">
+            <form onSubmit={changePassword} className="space-y-4">
+              <label className="block space-y-2 text-sm font-medium" htmlFor="current-password">
+                Mot de passe actuel
+                <Input id="current-password" type="password" autoComplete="current-password" required maxLength={128} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+              </label>
+              <label className="block space-y-2 text-sm font-medium" htmlFor="new-password">
+                Nouveau mot de passe (12 caractères minimum)
+                <Input id="new-password" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              </label>
+              {passwordError && <Alert>{passwordError}</Alert>}
+              <Button type="submit" loading={passwordBusy}>Changer le mot de passe et fermer les autres sessions</Button>
+            </form>
+          </Card>
         </section>
 
         <Button

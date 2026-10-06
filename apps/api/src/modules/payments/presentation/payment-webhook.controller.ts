@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
-import { SkipCsrf } from '../../../auth/presentation/auth.decorators';
+import { Public, SkipCsrf } from '../../../auth/presentation/auth.decorators';
 import { idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import { ProcessPaymentWebhookUseCase } from '../application/process-payment-webhook.use-case';
@@ -17,6 +17,7 @@ export class PaymentWebhookController {
   constructor(private readonly processWebhook: ProcessPaymentWebhookUseCase) {}
 
   @Post('webhook')
+  @Public()
   @HttpCode(200)
   @SkipCsrf()
   @UseGuards(PaymentWebhookSignatureGuard)

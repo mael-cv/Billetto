@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { LoginUseCase } from './application/login.use-case';
+import { ChangePasswordUseCase } from './application/change-password.use-case';
 import { RegisterUseCase } from './application/register.use-case';
 import { SessionTokenService } from './application/session-token.service';
 import { CREDENTIALS_REPOSITORY } from './domain/credentials.repository';
@@ -15,6 +16,7 @@ import { CsrfGuard } from './presentation/csrf.guard';
   controllers: [AuthController],
   providers: [
     LoginUseCase,
+    ChangePasswordUseCase,
     RegisterUseCase,
     SessionTokenService,
     { provide: PASSWORD_HASHER, useClass: Argon2PasswordHasher },
