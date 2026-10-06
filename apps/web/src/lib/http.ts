@@ -99,3 +99,31 @@ export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   return "Une erreur inattendue est survenue.";
 }
+
+/**
+ * Téléchargement d'un fichier servi par l'API (session par cookie) : le
+ * navigateur ne peut pas suivre un simple lien vers l'API avec ses cookies et
+ * le traitement d'erreur de l'application. Nom de fichier lu dans
+ * Content-Disposition.
+ */
+export async function download(path: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  } catch {
+    throw new ApiError(0, "RESEAU", "Impossible de joindre le serveur. Vérifiez votre connexion.");
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+    throw new ApiError(res.status, data?.error ?? "ERREUR", data?.message ?? "Téléchargement impossible");
+  }
+  const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "export.csv";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

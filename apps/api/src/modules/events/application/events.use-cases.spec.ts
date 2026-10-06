@@ -31,6 +31,7 @@ function setup() {
     update: jest.fn().mockResolvedValue(0),
     delete: jest.fn(),
     replaceAttributes: jest.fn(),
+    participants: jest.fn(),
   };
   return { db, repo, runs };
 }

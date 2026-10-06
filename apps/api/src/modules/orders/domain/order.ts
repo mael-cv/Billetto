@@ -26,6 +26,8 @@ export interface OrderTicket {
 export interface OrderDetail extends OrderSummary {
   utilisateurId: number;
   billets: OrderTicket[];
+  /** Annulation self-service possible jusqu'à cette date (null : vue admin ou commande sans billet). */
+  annulationPossibleJusqua: Date | null;
 }
 
 export type ReservationStatus = 'active' | 'confirmee' | 'expiree' | 'annulee';

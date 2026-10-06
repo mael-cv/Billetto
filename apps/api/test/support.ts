@@ -21,6 +21,8 @@ export function testConfig(overrides: Partial<Record<keyof AppConfig, string>> =
     LOG_LEVEL: 'silent',
     RATE_LIMIT_MAX: '100000',
     RATE_LIMIT_AUTH_MAX: '100000',
+    // Le job d'e-mails ne tourne pas pendant les tests : l'outbox est vérifiée en base.
+    EMAIL_OUTBOX_INTERVAL_MS: '0',
     ...overrides,
   });
 }

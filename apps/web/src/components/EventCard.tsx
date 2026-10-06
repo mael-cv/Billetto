@@ -1,11 +1,11 @@
-import { formatDateShort, formatEUR } from "../lib/format";
+import { eventTimeZone, formatDateShort, formatEUR } from "../lib/format";
 import { eventImage } from "../lib/presentation";
 import type { EventSummary } from "../lib/types";
 import { Link } from "./ui";
 import { IconPin } from "./icons";
 
 export function EventCard({ event }: { event: EventSummary }) {
-  const d = formatDateShort(event.debut);
+  const d = formatDateShort(event.debut, eventTimeZone(event));
   const isPast = event.statut === "finished" || new Date(event.fin) < new Date();
   return (
     <Link
