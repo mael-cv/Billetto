@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Security Audit: Quick",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --pentest --profile quick",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: Standard",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --profile standard",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: Full",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --full",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: Pentest",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --pentest --full",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: White-box",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --sast --secrets --dependencies --infra",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: Retest Finding",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --retest ${input:findingId}",
+      "problemMatcher": []
+    },
+    {
+      "label": "Security Audit: Generate Report",
+      "type": "shell",
+      "command": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --full --format all --ai-package",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "findingId",
+      "type": "promptString",
+      "description": "Identifiant du finding à retester (ex. SEC-001)",
+      "default": "SEC-001"
+    }
+  ]
+}
