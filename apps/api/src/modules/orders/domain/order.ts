@@ -1,7 +1,7 @@
 import type { Tx } from '../../../common/database/db-context.service';
 import type { Pagination } from '../../../common/validation/schemas';
 
-export type OrderStatus = 'pending' | 'paid' | 'cancelled' | 'refunded';
+export type OrderStatus = 'pending' | 'en_attente_virement' | 'paid' | 'cancelled' | 'refunded';
 
 export interface OrderSummary {
   id: number;

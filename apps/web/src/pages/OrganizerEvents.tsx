@@ -19,6 +19,7 @@ export function OrderStatusBadge({ statut }: { statut: OrderStatus }) {
   const map = {
     paid: ["success", "Payée"],
     pending: ["warning", "En attente"],
+    en_attente_virement: ["warning", "En attente de virement"],
     refunded: ["danger", "Remboursée"],
     cancelled: ["muted", "Annulée"],
   } as const;
