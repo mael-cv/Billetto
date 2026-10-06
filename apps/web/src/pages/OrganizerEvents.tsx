@@ -155,6 +155,15 @@ export function OrganizerEventsPage() {
                             <Button variant="ghost" size="sm" onClick={() => navigate(`/events/${e.slug}?scope=manage`)}>
                               Voir
                             </Button>
+                            {e.statut === "published" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate(`/checkin?evenement=${e.id}&nom=${encodeURIComponent(e.nom)}`)}
+                              >
+                                Check-in
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"

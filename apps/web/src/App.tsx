@@ -12,6 +12,7 @@ import { CheckoutPage } from "./pages/Checkout";
 import { AwaitingTransferPage } from "./pages/AwaitingTransfer";
 import { SuccessPage } from "./pages/Success";
 import { TicketsPage } from "./pages/Tickets";
+import { CheckinPage } from "./pages/Checkin";
 import { WaitlistPage } from "./pages/Waitlist";
 import { AuthPage } from "./pages/Auth";
 import { AccountPage } from "./pages/Account";
@@ -106,6 +107,12 @@ function Routes() {
     return (
       <RequireAuth roles={[...manage]}>
         <OrganizerDashboardPage />
+      </RequireAuth>
+    );
+  if (clean === "/checkin")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <CheckinPage />
       </RequireAuth>
     );
   if (clean === "/organizer/events")

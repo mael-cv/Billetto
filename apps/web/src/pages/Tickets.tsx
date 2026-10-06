@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import QRCode from "qrcode";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { errorMessage } from "../lib/http";
 import { formatDate, formatTime } from "../lib/format";
@@ -12,14 +13,21 @@ import { Badge, Button, Card, EmptyState, ErrorState, Skeleton, Tabs } from "../
 import { IconCalendar, IconPin } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 
-// Motif décoratif dérivé du code du billet (pas un vrai QR code).
-function CodePattern({ code }: { code: string }) {
-  const bits = code.replace(/-/g, "").split("").map((c) => parseInt(c, 16));
+// QR de check-in : BT1.<code>.<signature HMAC>, vérifié par scanner_billet.
+function TicketQr({ payload, code }: { payload: string; code: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(payload, { errorCorrectionLevel: "M", margin: 1, width: 192 })
+      .then((url) => !cancelled && setSrc(url))
+      .catch(() => !cancelled && setSrc(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [payload]);
   return (
-    <div className="grid size-24 shrink-0 grid-cols-7 gap-0.5 rounded-[10px] bg-white p-2" aria-label={`Code ${code}`} role="img">
-      {Array.from({ length: 49 }).map((_, i) => (
-        <div key={i} className={`rounded-[1px] ${((bits[i % bits.length] ?? 0) + i) % 3 === 0 ? "bg-black" : "bg-transparent"}`} />
-      ))}
+    <div className="size-28 shrink-0 rounded-[10px] bg-white p-1.5" data-testid="ticket-qr">
+      {src && <img src={src} alt={`QR du billet ${code}`} className="size-full [image-rendering:pixelated]" />}
     </div>
   );
 }
@@ -73,7 +81,7 @@ function TicketCard({ t, onRefund, refunding }: { t: MyTicket; onRefund: () => v
               </Button>
             )}
           </div>
-          {state === "valide" && <CodePattern code={t.code} />}
+          {state === "valide" && <TicketQr payload={t.qrPayload} code={t.code} />}
         </div>
       </div>
     </Card>
