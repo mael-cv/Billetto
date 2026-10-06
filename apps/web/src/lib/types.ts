@@ -2,7 +2,7 @@
 
 export type Role = "visitor" | "organizer" | "admin";
 export type EventStatus = "draft" | "published" | "cancelled" | "finished";
-export type OrderStatus = "pending" | "paid" | "cancelled" | "refunded";
+export type OrderStatus = "pending" | "en_attente_virement" | "paid" | "cancelled" | "refunded";
 export type Scope = "public" | "manage";
 
 export interface Page<T> {
