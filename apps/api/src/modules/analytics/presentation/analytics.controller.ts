@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Header, Query } from '@nestjs/common';
 import { z } from 'zod';
 import type { Actor } from '../../../auth/domain/actor';
 import { Authenticated, CurrentActor } from '../../../auth/presentation/auth.decorators';
@@ -33,6 +33,13 @@ export class AnalyticsController {
   @Get('summary')
   summary(@CurrentActor() actor: Actor) {
     return this.analytics.summary(actor);
+  }
+
+  /** Dashboard temps réel, interrogé toutes les 5 s : jamais mis en cache. */
+  @Get('live')
+  @Header('Cache-Control', 'no-store')
+  live(@CurrentActor() actor: Actor) {
+    return this.analytics.live(actor);
   }
 
   @Get('events')

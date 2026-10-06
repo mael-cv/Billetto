@@ -20,6 +20,9 @@
 //   9. Phase 13 : N sessions scannent le même billet (client_scan_id
 //      distincts) → exactement 1 'ok' ; N sessions rejouent le même
 //      client_scan_id → 1 seule ligne.
+//  10. Phase 14 : pendant que N sessions achètent et réservent sur un même
+//      événement, une session lit en boucle v_remplissage (dashboard live) :
+//      jamais vendus + réservés > places, et chiffres finaux = comptes directs.
 //
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
@@ -48,6 +51,22 @@ function parallel(sqlTemplate) {
     quota: (out.match(/BT006/g) ?? []).length,
     other: out.split('\n').filter((l) => /ERROR/.test(l) && !/BT006/.test(l)),
   };
+}
+
+// Écritures concurrentes + lecteur en boucle, dans le même conteneur.
+function parallelWithReader(writeSql, readSql, reads) {
+  const script = `
+    for i in $(seq 1 ${N}); do
+      if [ $((i % 2)) -eq 0 ]; then SQL="${writeSql.even}"; else SQL="${writeSql.odd}"; fi
+      psql -X -q -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$SQL" > /tmp/w_$i.log 2>&1 &
+    done
+    for r in $(seq 1 ${reads}); do
+      psql -X -q -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "${readSql}"
+    done
+    wait
+    cat /tmp/w_*.log; rm -f /tmp/w_*.log`;
+  const res = spawnSync('docker', ['compose', 'exec', '-T', 'postgres', 'sh', '-c', script], { encoding: 'utf-8' });
+  return res.stdout ?? '';
 }
 
 const setup = q(`
@@ -92,6 +111,8 @@ q(`
 
 let failed = false;
 let tAttente = 0;
+let evtLive = 0;
+let tLive = 0;
 try {
   console.log(`» ${N} sessions simultanées, quota ${QUOTA}`);
 
@@ -208,6 +229,41 @@ try {
   const lignesRejeu = Number(q(`SELECT count(*) FROM billets_scans WHERE client_scan_id = '${rejeuId}'`));
   console.log(`  ${scansOk} ok, ${scansDoublon} doublon(s) ; même client_scan_id rejoué ${N} fois : ${lignesRejeu} ligne`);
 
+  console.log(`» phase 14 : lectures du dashboard pendant ${N} achats/holds simultanés`);
+  evtLive = Number(
+    q(`INSERT INTO evenements (organisateur_id, lieu_id, type_evenement_id, nom, slug, debut, fin, statut)
+       SELECT organisateur_id, lieu_id, type_evenement_id, 'Concurrence live', slug || '-live', debut, fin, 'published'
+       FROM evenements WHERE id = ${evt} RETURNING id`),
+  );
+  tLive = Number(
+    q(`INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
+       VALUES (${evtLive}, 'Live', 20, ${QUOTA}, now() - interval '1 day', now() + interval '29 days') RETURNING id`),
+  );
+  const liveOut = parallelWithReader(
+    {
+      even: `SELECT commande_id FROM acheter_billet(${user}, ${tLive}, 1)`,
+      odd: `SELECT reservation_id FROM creer_reservation(${user}, ${tLive}, 1, 'carte')`,
+    },
+    `SELECT CASE WHEN billets_vendus + billets_reserves > places OR billets_vendus < 0 OR billets_reserves < 0
+                 THEN 'VIOLATION ' || billets_vendus || '+' || billets_reserves || '>' || places ELSE 'LECTURE' END
+     FROM v_remplissage WHERE evenement_id = ${evtLive}`,
+    30,
+  );
+  const lectures = (liveOut.match(/^LECTURE$/gm) ?? []).length;
+  const violations = liveOut.split('\n').filter((l) => l.startsWith('VIOLATION'));
+  const [vueVendus, vueReserves, vraisVendus, vraisReserves] = q(`
+    SELECT billets_vendus || ' ' || billets_reserves || ' ' ||
+           (SELECT count(*) FROM billets b JOIN commandes c ON c.id = b.commande_id
+            WHERE b.tarif_id = ${tLive} AND c.statut = 'paid') || ' ' ||
+           (SELECT coalesce(sum(quantite), 0) FROM reservations
+            WHERE tarif_id = ${tLive} AND statut = 'active' AND expire_a > now())
+    FROM v_remplissage WHERE evenement_id = ${evtLive}`)
+    .split(/\s+/)
+    .map(Number);
+  console.log(
+    `  ${lectures} lectures, ${violations.length} incohérence(s) ; final : vue ${vueVendus} vendus + ${vueReserves} réservés, base ${vraisVendus} + ${vraisReserves}`,
+  );
+
   const checks = [
     [avecVerrou.other.length === 0, `erreurs inattendues : ${avecVerrou.other.join(' | ')}`],
     [avecVerrou.ok === QUOTA, `acheter_billet : ${QUOTA} succès attendus, ${avecVerrou.ok}`],
@@ -230,6 +286,11 @@ try {
     [scans.other.length === 0 && rejeux.other.length === 0, `scanner_billet : erreurs inattendues : ${[...scans.other, ...rejeux.other].join(' | ')}`],
     [scansOk === 1 && scansDoublon === N - 1, `check-in : 1 ok / ${N - 1} doublons attendus, ${scansOk} / ${scansDoublon}`],
     [lignesRejeu === 1, `check-in : 1 ligne attendue pour un client_scan_id rejoué, ${lignesRejeu}`],
+    [lectures === 30 && violations.length === 0, `dashboard : 30 lectures cohérentes attendues, ${lectures} / ${violations.join(' | ')}`],
+    [
+      vueVendus === vraisVendus && vueReserves === vraisReserves && vueVendus + vueReserves === QUOTA,
+      `dashboard : chiffres finaux ${vueVendus}+${vueReserves} ≠ base ${vraisVendus}+${vraisReserves} (quota ${QUOTA})`,
+    ],
     [expirees === QUOTA && actives === 1, `purge : ${QUOTA} expirés / 1 actif attendus, ${expirees} / ${actives}`],
   ];
   for (const [ok, msg] of checks) {
@@ -242,21 +303,23 @@ try {
     console.log(`✓ aucune survente avec verrou ; survente reproduite sans verrou (${vendusNaif}/${QUOTA})`);
     console.log(`✓ aucune survente sur les holds concurrents ; hold expiré libère le quota (expiration lazy)`);
     console.log(`✓ achat direct bloqué par les holds actifs ; purge = reporting uniquement`);
+    console.log(`✓ dashboard live : aucune lecture incohérente sous charge, chiffres finaux exacts`);
     console.log(`✓ check-in : un seul scan ok malgré ${N} scans simultanés ; rejeux idempotents`);
     console.log(`✓ liste d'attente : une seule offre, à la tête de file, malgré ${N} balayages concurrents`);
   }
 } finally {
   q(`
     DELETE FROM billets_scans WHERE evenement_id = ${evt};
+    DELETE FROM reservations WHERE tarif_id = ${tLive};
     DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM reservations WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM paiements WHERE commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user});
     DELETE FROM billets WHERE utilisateur_id = ${user};
     DELETE FROM reservations WHERE utilisateur_id = ${user};
     DELETE FROM commandes WHERE utilisateur_id = ${user};
-    DELETE FROM tarifs WHERE evenement_id = ${evt};
-    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy}, ${tAttente});
-    DELETE FROM evenements WHERE id = ${evt};
+    DELETE FROM tarifs WHERE evenement_id IN (${evt}, ${evtLive});
+    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy}, ${tAttente}, ${tLive});
+    DELETE FROM evenements WHERE id IN (${evt}, ${evtLive});
     DELETE FROM lieux WHERE id = ${lieu};
     DELETE FROM utilisateurs WHERE id = ${user} OR email LIKE 'attente-conc-%-${evt}@billetto.test';
     DELETE FROM organisateurs WHERE id = ${orga};

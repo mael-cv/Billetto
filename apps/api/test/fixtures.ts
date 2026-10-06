@@ -9,6 +9,7 @@ export interface Fixtures {
   tarifConcurrence: number;
   tarifAttente: number;
   tarifCheckin: number;
+  tarifLive: number;
   eventCommence: number;
   tarifCommence: number;
   eventDraftB: number;
@@ -55,6 +56,7 @@ export async function createFixtures(): Promise<Fixtures> {
   const tarifConcurrence = await tarif(eventFutur, 'Concurrence', 10, '-1 day', '29 days');
   const tarifAttente = await tarif(eventFutur, 'Attente', 1, '-1 day', '29 days');
   const tarifCheckin = await tarif(eventFutur, 'Checkin', 5, '-1 day', '29 days');
+  const tarifLive = await tarif(eventFutur, 'Live', 5, '-1 day', '29 days');
   const eventCommence = await event(orgaA, 'e2e-commence', '-1 hour', 'published');
   const tarifCommence = await tarif(eventCommence, 'Standard', 50, '-10 days', '-2 hours');
   const eventDraftB = await event(orgaB, 'e2e-brouillon-b', '40 days', 'draft');
@@ -68,6 +70,7 @@ export async function createFixtures(): Promise<Fixtures> {
     tarifConcurrence: Number(tarifConcurrence),
     tarifAttente: Number(tarifAttente),
     tarifCheckin: Number(tarifCheckin),
+    tarifLive: Number(tarifLive),
     eventCommence: Number(eventCommence),
     tarifCommence: Number(tarifCommence),
     eventDraftB: Number(eventDraftB),
