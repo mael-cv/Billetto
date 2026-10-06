@@ -14,6 +14,9 @@
 //   6. Un hold expiré ne bloque plus acheter_billet() non plus.
 //   7. purger_reservations_expirees() marque les holds expirés sans toucher
 //      les holds actifs (reporting uniquement).
+//   8. Phase 12 : une place se libère (hold expiré, aucun événement) et N
+//      sessions appellent traiter_liste_attente en même temps : une seule
+//      offre, pour la tête de file (FIFO strict).
 //
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
@@ -85,6 +88,7 @@ q(`
 `);
 
 let failed = false;
+let tAttente = 0;
 try {
   console.log(`» ${N} sessions simultanées, quota ${QUOTA}`);
 
@@ -157,6 +161,35 @@ try {
     .map(Number);
   console.log(`  purge : ${expirees} holds marqués expirés, ${actives} hold actif conservé`);
 
+  // Quota pris par QUOTA-1 billets + 1 hold à TTL 1s ; 3 inscrits ; le hold
+  // expire (lazy, aucun trigger) ; N balayages concurrents.
+  console.log(`» phase 12 : ${N} traiter_liste_attente simultanés pour 1 place libérée`);
+  tAttente = Number(
+    q(`INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
+       VALUES (${evt}, 'Attente', 20, ${QUOTA}, now() - interval '1 day', now() + interval '29 days') RETURNING id`),
+  );
+  const attendants = q(`
+    INSERT INTO utilisateurs (email, password_hash, prenom, nom)
+    SELECT 'attente-conc-' || i || '-${evt}@billetto.test', 'x', 'Test', 'Attente ' || i FROM generate_series(1, 3) i
+    RETURNING id`)
+    .split(/\s+/)
+    .map(Number);
+  q(`SELECT commande_id FROM acheter_billet(${user}, ${tAttente}, ${QUOTA - 1})`);
+  q(`SELECT reservation_id FROM creer_reservation(${user}, ${tAttente}, 1, 'carte', interval '1 second')`);
+  for (const a of attendants) q(`SELECT inscrire_liste_attente(${a}, ${tAttente}, 1)`);
+  q(`SELECT pg_sleep(1.5)`);
+  const balayages = parallel(`SELECT traiter_liste_attente(${tAttente})`);
+  const offres = q(
+    `SELECT utilisateur_id FROM liste_attente WHERE tarif_id = ${tAttente} AND statut = 'notifiee' ORDER BY id`,
+  )
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(Number);
+  const restantsAttente = Number(q(`SELECT places_restantes(${tAttente})`));
+  console.log(
+    `  ${offres.length} offre(s) émise(s) (utilisateur ${offres.join(', ') || '-'}, tête = ${attendants[0]}), ${restantsAttente} place restante`,
+  );
+
   const checks = [
     [avecVerrou.other.length === 0, `erreurs inattendues : ${avecVerrou.other.join(' | ')}`],
     [avecVerrou.ok === QUOTA, `acheter_billet : ${QUOTA} succès attendus, ${avecVerrou.ok}`],
@@ -173,6 +206,9 @@ try {
     [surReserve.ok === 0, `acheter_billet sur holds : 0 succès attendu, ${surReserve.ok}`],
     [surReserve.quota === N, `acheter_billet sur holds : ${N} refus attendus, ${surReserve.quota}`],
     [vendusHold === 0 && restantsHold === 0, `tarif réservé : 0 billet / 0 place restante attendus, ${vendusHold} / ${restantsHold}`],
+    [balayages.other.length === 0, `traiter_liste_attente : erreurs inattendues : ${balayages.other.join(' | ')}`],
+    [offres.length === 1 && offres[0] === attendants[0], `liste d'attente : 1 offre pour la tête attendue, ${offres.join(', ')}`],
+    [restantsAttente === 0, `liste d'attente : la place offerte doit être bloquée, ${restantsAttente} restante(s)`],
     [expirees === QUOTA && actives === 1, `purge : ${QUOTA} expirés / 1 actif attendus, ${expirees} / ${actives}`],
   ];
   for (const [ok, msg] of checks) {
@@ -185,18 +221,21 @@ try {
     console.log(`✓ aucune survente avec verrou ; survente reproduite sans verrou (${vendusNaif}/${QUOTA})`);
     console.log(`✓ aucune survente sur les holds concurrents ; hold expiré libère le quota (expiration lazy)`);
     console.log(`✓ achat direct bloqué par les holds actifs ; purge = reporting uniquement`);
+    console.log(`✓ liste d'attente : une seule offre, à la tête de file, malgré ${N} balayages concurrents`);
   }
 } finally {
   q(`
+    DELETE FROM liste_attente WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
+    DELETE FROM reservations WHERE tarif_id IN (SELECT id FROM tarifs WHERE evenement_id = ${evt});
     DELETE FROM paiements WHERE commande_id IN (SELECT id FROM commandes WHERE utilisateur_id = ${user});
     DELETE FROM billets WHERE utilisateur_id = ${user};
     DELETE FROM reservations WHERE utilisateur_id = ${user};
     DELETE FROM commandes WHERE utilisateur_id = ${user};
     DELETE FROM tarifs WHERE evenement_id = ${evt};
-    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy});
+    DELETE FROM journal_tarifs WHERE tarif_id IN (${tVerrou}, ${tNaif}, ${tHold}, ${tExpiry}, ${tExpiryBuy}, ${tAttente});
     DELETE FROM evenements WHERE id = ${evt};
     DELETE FROM lieux WHERE id = ${lieu};
-    DELETE FROM utilisateurs WHERE id = ${user};
+    DELETE FROM utilisateurs WHERE id = ${user} OR email LIKE 'attente-conc-%-${evt}@billetto.test';
     DELETE FROM organisateurs WHERE id = ${orga};
     DROP SCHEMA demo_concurrence CASCADE;
   `);
