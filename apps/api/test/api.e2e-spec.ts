@@ -10,6 +10,7 @@ import { Client, DEMO_PASSWORD, owner, RUN, startApp, TEST_PASSWORD, testConfig 
  * appliquée par PostgreSQL (GRANT, RLS, fonctions), pas seulement par l'API.
  */
 describe('API Billetto (e2e)', () => {
+  // security-audit-ignore: generic-secret -- secret HMAC éphémère des tests e2e
   const webhookSecret = 'api-e2e-webhook-secret-with-at-least-32-characters';
   let app: NestFastifyApplication;
   let fx: Fixtures;
@@ -61,6 +62,7 @@ describe('API Billetto (e2e)', () => {
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.headers['strict-transport-security']).toBeDefined();
       expect(res.headers['x-powered-by']).toBeUndefined();
+      expect(res.headers['permissions-policy']).toContain('camera=()');
     });
 
     it('CORS : seule l’origine du front est autorisée', async () => {
@@ -80,6 +82,16 @@ describe('API Billetto (e2e)', () => {
 
     it('requête modifiante sans jeton CSRF → 403', async () => {
       const res = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 }, { 'x-csrf-token': '' });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('CSRF_INVALIDE');
+    });
+
+    it('requête modifiante depuis une origine étrangère (jeton valide) → 403', async () => {
+      const res = await visiteur.post(
+        '/tickets/purchase',
+        { tarifId: fx.tarifQuota5, quantite: 1 },
+        { origin: 'https://evil.example' },
+      );
       expect(res.statusCode).toBe(403);
       expect(res.json().error).toBe('CSRF_INVALIDE');
     });
@@ -222,6 +234,7 @@ describe('API Billetto (e2e)', () => {
 
     it('les comptes du seed sans hash valide ne peuvent pas se connecter', async () => {
       const client = await Client.anonymous(app);
+      // security-audit-ignore: generic-secret -- mot de passe invalide attendu en échec (401)
       expect((await client.post('/auth/login', { email: 'user1@billetto.test', password: '!seed-no-login' })).statusCode).toBe(401);
     });
 

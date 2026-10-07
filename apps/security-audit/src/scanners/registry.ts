@@ -63,6 +63,13 @@ export async function runScanner(
       return parseGitleaks(await exec("gitleaks", ["detect", "--no-banner", "--report-format", "json", "--report-path", "-"], repoRoot));
     case "semgrep":
       return parseSemgrep(await exec("semgrep", ["--quiet", "--json", "--config", "auto", "."], repoRoot));
+    case "nuclei": {
+      // DAST : scanne la CIBLE (base_url), pas le dépôt. -jsonl = un objet JSON par ligne.
+      const target = config.target.base_url.replace(/\/+$/, "");
+      return parseNuclei(
+        await exec("nuclei", ["-u", target, "-jsonl", "-silent", "-no-color", "-disable-update-check"], repoRoot),
+      );
+    }
     default:
       return { name, installed: true, findings: [], note: "adaptateur minimal : exécution non implémentée" };
   }
@@ -154,6 +161,60 @@ export async function runScanner(
       return wrap([]);
     }
   }
+
+  function parseNuclei(out?: { stdout: string }): ScannerResult {
+    if (!out) return wrap([]);
+    const findings: FindingInput[] = [];
+    // Sortie JSONL : une détection par ligne. On tolère les lignes non-JSON (bannières).
+    for (const line of out.stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("{")) continue;
+      try {
+        const r = JSON.parse(trimmed) as {
+          "template-id"?: string;
+          info?: { name?: string; severity?: string; tags?: string[]; description?: string };
+          "matched-at"?: string;
+          type?: string;
+        };
+        const tags = r.info?.tags ?? [];
+        findings.push({
+          title: `DAST (nuclei) : ${r.info?.name ?? r["template-id"] ?? "détection"}`,
+          severity: mapSeverity(r.info?.severity),
+          confidence: 0.6,
+          status: "SUSPECTED",
+          classification: "REAL_VULNERABILITY",
+          category: nucleiCategory(r["template-id"], tags),
+          source: "scanner:nuclei",
+          location: { endpoint: r["matched-at"] },
+          evidence: [{ note: r.info?.description }],
+          reproduction: [`nuclei -id ${r["template-id"] ?? "?"} -u ${r["matched-at"] ?? config.target.base_url}`],
+          remediation: "Voir le template nuclei correspondant.",
+          retestable: false,
+        });
+      } catch {
+        /* ligne ignorée */
+      }
+    }
+    return wrap(findings);
+  }
+}
+
+/** Mappe un template/tags nuclei vers une catégorie de couverture black-box. */
+function nucleiCategory(templateId: string | undefined, tags: string[]): Category {
+  const hay = `${templateId ?? ""} ${tags.join(" ")}`.toLowerCase();
+  if (/\bxss\b/.test(hay)) return "xss";
+  if (/sqli|injection|rce|cmd|ssti/.test(hay)) return "injection";
+  if (/ssrf/.test(hay)) return "ssrf";
+  if (/redirect/.test(hay)) return "open-redirect";
+  if (/\bcors\b/.test(hay)) return "cors";
+  if (/traversal|lfi|\bpath\b/.test(hay)) return "path-traversal";
+  if (/\bjwt\b/.test(hay)) return "jwt";
+  if (/header|hsts|csp|clickjack/.test(hay)) return "security-headers";
+  if (/cookie/.test(hay)) return "cookies";
+  if (/\bcsrf\b/.test(hay)) return "csrf";
+  if (/debug|panel|exposure|config|default-login|misconfig/.test(hay)) return "debug-endpoints";
+  if (/takeover|dns|subdomain/.test(hay)) return "infrastructure";
+  return "api";
 }
 
 function depFinding(title: string, summary: string, severity: Severity, scanner: string, ref?: string): FindingInput {

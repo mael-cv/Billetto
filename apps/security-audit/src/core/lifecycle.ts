@@ -4,6 +4,7 @@
  * on ne lance rien et on ne l'arrête pas.
  */
 
+// security-audit-ignore: child-process -- auto-start de la cible : commande issue de security-audit.yaml (config de confiance, jamais d'une entrée réseau)
 import { spawn, type ChildProcess } from "node:child_process";
 import type { AuditConfig } from "./config";
 import type { HttpClient } from "./http-client";
@@ -84,6 +85,7 @@ export class Lifecycle {
     }
 
     this.logger.step(`Auto-start : ${cmd}`);
+    // shell: true voulu : start_command est une ligne de commande saisie par l'opérateur dans la config.
     this.child = spawn(cmd, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
     this.child.stdout?.on("data", (d: Buffer) => (this.logBuf += d.toString()));
     this.child.stderr?.on("data", (d: Buffer) => (this.logBuf += d.toString()));

@@ -29,25 +29,38 @@
 // Les sessions sont lancées en parallèle DANS le conteneur (psql en arrière-plan)
 // pour éviter le délai de démarrage de docker exec. Les données de test sont
 // validées (nécessaire pour être vues par les autres sessions) puis supprimées.
+// security-audit-ignore: child-process -- spawnSync avec argv (pas de shell côté Node), aucune entrée externe
 import { spawnSync } from 'node:child_process';
 import { psql } from './psql.mjs';
 
 const N = Number(process.env.CONCURRENCY_SESSIONS ?? 40);
+if (!Number.isInteger(N) || N <= 0) throw new Error(`CONCURRENCY_SESSIONS invalide : ${process.env.CONCURRENCY_SESSIONS}`);
 const QUOTA = 10;
 const q = (sql) => psql(['-At', '-c', sql], { capture: true }).trim();
 
-function parallel(sqlTemplate) {
-  const script = `
-    for i in $(seq 1 ${N}); do
-      psql -X -q -At -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-           -c "${sqlTemplate}" > /tmp/conc_$i.log 2>&1 &
-    done
-    wait
-    cat /tmp/conc_*.log; rm -f /tmp/conc_*.log`;
-  const res = spawnSync('docker', ['compose', 'exec', '-T', 'postgres', 'sh', '-c', script], {
+// Exécute un script sh CONSTANT dans le conteneur postgres. Les données (SQL, N)
+// passent par l'environnement (`-e`, argv de docker), jamais interpolées dans le
+// script : aucune injection shell possible.
+function inContainer(script, env) {
+  const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
+  // security-audit-ignore: child-process -- argv sans shell côté Node ; script constant, données via -e
+  const res = spawnSync('docker', ['compose', 'exec', '-T', ...envArgs, 'postgres', 'sh', '-c', script], {
     encoding: 'utf-8',
   });
-  const out = res.stdout ?? '';
+  return res.stdout ?? '';
+}
+
+function parallel(sqlTemplate) {
+  const out = inContainer(
+    `
+    for i in $(seq 1 "$N"); do
+      psql -X -q -At -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+           -c "$SQL" > /tmp/conc_$i.log 2>&1 &
+    done
+    wait
+    cat /tmp/conc_*.log; rm -f /tmp/conc_*.log`,
+    { N, SQL: sqlTemplate },
+  );
   return {
     ok: out.split('\n').filter((l) => /^\d+$/.test(l.trim())).length,
     quota: (out.match(/BT006/g) ?? []).length,
@@ -56,17 +69,17 @@ function parallel(sqlTemplate) {
 }
 
 function parallelWebhook(sqlTemplate) {
-  const script = `
-    for i in $(seq 1 ${N}); do
+  const out = inContainer(
+    `
+    for i in $(seq 1 "$N"); do
       psql -X -q -At -v VERBOSITY=verbose -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-           -c "${sqlTemplate}" > /tmp/conc_webhook_$i.log 2>&1 &
+           -c "$SQL" > /tmp/conc_webhook_$i.log 2>&1 &
     done
     wait
-    cat /tmp/conc_webhook_*.log; rm -f /tmp/conc_webhook_*.log`;
-  const res = spawnSync('docker', ['compose', 'exec', '-T', 'postgres', 'sh', '-c', script], {
-    encoding: 'utf-8',
-  });
-  const lines = (res.stdout ?? '').split('\n').map((line) => line.trim());
+    cat /tmp/conc_webhook_*.log; rm -f /tmp/conc_webhook_*.log`,
+    { N, SQL: sqlTemplate },
+  );
+  const lines = out.split('\n').map((line) => line.trim());
   return {
     processed: lines.filter((line) => line === 'f').length,
     duplicates: lines.filter((line) => line === 't').length,
@@ -76,18 +89,19 @@ function parallelWebhook(sqlTemplate) {
 
 // Écritures concurrentes + lecteur en boucle, dans le même conteneur.
 function parallelWithReader(writeSql, readSql, reads) {
-  const script = `
-    for i in $(seq 1 ${N}); do
-      if [ $((i % 2)) -eq 0 ]; then SQL="${writeSql.even}"; else SQL="${writeSql.odd}"; fi
+  return inContainer(
+    `
+    for i in $(seq 1 "$N"); do
+      if [ $((i % 2)) -eq 0 ]; then SQL="$SQL_EVEN"; else SQL="$SQL_ODD"; fi
       psql -X -q -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$SQL" > /tmp/w_$i.log 2>&1 &
     done
-    for r in $(seq 1 ${reads}); do
-      psql -X -q -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "${readSql}"
+    for r in $(seq 1 "$READS"); do
+      psql -X -q -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$SQL_READ"
     done
     wait
-    cat /tmp/w_*.log; rm -f /tmp/w_*.log`;
-  const res = spawnSync('docker', ['compose', 'exec', '-T', 'postgres', 'sh', '-c', script], { encoding: 'utf-8' });
-  return res.stdout ?? '';
+    cat /tmp/w_*.log; rm -f /tmp/w_*.log`,
+    { N, READS: reads, SQL_EVEN: writeSql.even, SQL_ODD: writeSql.odd, SQL_READ: readSql },
+  );
 }
 
 const setup = q(`

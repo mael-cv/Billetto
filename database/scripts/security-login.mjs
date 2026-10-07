@@ -4,6 +4,7 @@
 //   - SET ROLE vérifie l'appartenance du rôle de SESSION, pas du rôle courant ;
 //   - controler_acteur() autorise la maintenance sans contexte pour un superutilisateur.
 // Ce script se connecte donc réellement comme l'API le fera.
+// security-audit-ignore: child-process -- spawnSync avec argv (pas de shell côté Node), aucune entrée externe
 import { spawnSync } from 'node:child_process';
 import './psql.mjs'; // charge .env
 
@@ -15,6 +16,7 @@ if (!password) {
 
 // Une invocation = une session. Les commandes sont envoyées sur l'entrée standard.
 function asApp(sql) {
+  // security-audit-ignore: child-process -- argv ; mot de passe en élément d'argv (-e), SQL sur stdin
   const res = spawnSync(
     'docker',
     [

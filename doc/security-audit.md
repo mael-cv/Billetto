@@ -11,7 +11,19 @@ pnpm install
 pnpm --filter @billetto/security-audit exec tsx src/cli.ts --help
 ```
 
-Les scanners open-source (Semgrep, Gitleaks, Trivy, OSV-Scanner) sont **optionnels** : détectés s'ils sont dans le `PATH`, sinon `NOT_INSTALLED` et l'audit continue.
+Les scanners open-source (Semgrep, Gitleaks, Trivy, OSV-Scanner, Nuclei) sont **optionnels** : détectés s'ils sont dans le `PATH`, sinon `NOT_INSTALLED` et l'audit continue. Pour les installer d'un coup (idempotent, winget + repli pip/go, ZAP exclu) :
+
+```bash
+pnpm security-audit:install-scanners
+```
+
+Câblage : OSV/Trivy → moteur `dependencies`, Semgrep → `sast`, Gitleaks → `secrets`, Nuclei (DAST) → phase black-box contre `target.base_url`. Nuclei télécharge ses templates au premier lancement.
+
+### Prérequis pour une couverture complète
+
+1. **Cible black-box joignable.** L'auto-start est configuré (`lifecycle.start_command: docker compose up -d --wait api`) ; lancer avec `--target-start`, ou démarrer l'API à la main (`docker compose up -d --wait api`). Sans cible joignable, les 30 catégories black-box restent `NOT_TESTED`.
+2. **Comptes de démo seedés** (auth/authorization/bruteforce) : `pnpm db:migrate` puis `pnpm db:seed:demo` contre la base ciblée, avant l'audit.
+3. **Scanners installés** (`pnpm security-audit:install-scanners`) pour que les sections Semgrep/Gitleaks/Trivy/OSV/Nuclei passent de `NOT_INSTALLED` à « disponible ».
 
 ## Architecture
 
@@ -82,6 +94,23 @@ White-box : sast, secrets, dependencies, configuration, docker, cicd, infrastruc
 - **Couverture** honnête : `TESTED | NOT_TESTED | NOT_APPLICABLE | INCONCLUSIVE`. Le rapport affiche
   « No confirmed vulnerabilities found among tested controls » + `Coverage: NN%`, jamais
   « 0 vulnerabilities » si un contrôle n'a pas pu tourner.
+- **Rate-limit** : une sonde qui reçoit 429 (le rate-limit passe avant les guards) ne conclut pas ;
+  la sonde CSRF rejoue une fois après `retry-after`, puis classe la route « non testée ».
+
+### Suppression justifiée (SAST, secrets)
+
+Un faux positif white-box se supprime par un marqueur sur la ligne signalée ou la ligne précédente :
+
+```ts
+// security-audit-ignore: child-process -- spawnSync avec argv, aucune entrée externe
+import { spawnSync } from 'node:child_process';
+```
+
+- `<règle>` = id de la règle (`child-process`, `generic-secret`, `jwt`, `db-url`…), plusieurs séparées par `,`.
+- La raison après `--` est **obligatoire** : sans elle, le finding reste actif et un INFO
+  « suppression non justifiée » est ajouté.
+- Le finding supprimé reste visible dans le rapport (`FALSE_POSITIVE` + raison) mais sort des
+  compteurs et du security gate. Toujours corriger le code d'abord, ne supprimer que le résiduel.
 
 ## Retest
 
@@ -135,5 +164,5 @@ Mistral (protocole contradictoire Attacker/Defender/Judge). Le cœur n'appelle j
 - *Black-box NOT_TESTED* : application injoignable (configurer `lifecycle.start_command` ou démarrer
   l'app) ; certaines catégories peuvent être `INCONCLUSIVE` si le rate-limit coupe un test (relancer
   la catégorie isolément).
-- *Scanner NOT_INSTALLED* : installer l'outil (Semgrep/Gitleaks/Trivy/OSV) ou ignorer — le cœur reste
-  autonome.
+- *Scanner NOT_INSTALLED* : `pnpm security-audit:install-scanners` (Semgrep/Gitleaks/Trivy/OSV/Nuclei)
+  ou ignorer — le cœur reste autonome.
