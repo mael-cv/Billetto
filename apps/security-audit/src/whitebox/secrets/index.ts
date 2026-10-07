@@ -4,6 +4,8 @@ import type { FindingInput } from "../../core/finding";
 import { walkFiles, readFileSafe, GitignoreMatcher } from "../fs-util";
 import { shannonEntropy } from "../../core/evidence";
 import { score, VECTORS } from "../../core/score";
+import { applySuppression } from "../suppression";
+import { runScanner } from "../../scanners/registry";
 
 /**
  * Détection de secrets. Respecte .gitignore par défaut (le .env local n'est donc
@@ -69,7 +71,7 @@ export const secretsCheck: WhiteboxCheck = {
           const downgrade = isExample || isTest || isIllustrative || looksLikeTestValue;
           const severity = downgrade ? "INFO" : rule.id === "private-key" || rule.id === "db-url" ? "HIGH" : "MEDIUM";
           const s = severity === "HIGH" ? score({ ...VECTORS.infoLeak, C: "H" }) : score(VECTORS.infoLeak);
-          findings.push({
+          findings.push(...applySuppression({
             title: `${rule.title}${isExample ? " (fichier d'exemple)" : isTest ? " (fichier de test)" : ""}`,
             severity,
             confidence: downgrade ? 0.3 : 0.7,
@@ -87,13 +89,21 @@ export const secretsCheck: WhiteboxCheck = {
             reproduction: [`${rel}:${i + 1} — secret potentiel (${rule.id})`],
             remediation: "Retirer le secret du dépôt, le faire tourner, utiliser des variables d'environnement/secrets manager.",
             retestable: false,
-          });
+          }, lines, i, rule.id, rel));
         }
       }
     }
 
-    const note = allFiles ? `${files.length} fichiers (y compris gitignorés)` : `${files.length} fichiers suivis`;
-    return { findings, coverage: "TESTED", coverageNote: note };
+    // Scanner de secrets externe optionnel (gitleaks). NOT_INSTALLED/désactivé => no-op.
+    let scannerNote = "gitleaks non installé";
+    const gitleaks = await runScanner("gitleaks", ctx.repoRoot, ctx.config);
+    if (gitleaks.installed) {
+      scannerNote = `gitleaks : ${gitleaks.findings.length} findings`;
+      findings.push(...gitleaks.findings);
+    }
+
+    const base = allFiles ? `${files.length} fichiers (y compris gitignorés)` : `${files.length} fichiers suivis`;
+    return { findings, coverage: "TESTED", coverageNote: `${base} ; ${scannerNote}` };
   },
 };
 

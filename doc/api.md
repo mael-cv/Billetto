@@ -118,7 +118,7 @@ curl -s -b $J "localhost:3001/api/v1/tickets/me?pageSize=5"
 ```
 
 ## Comptes de démonstration
-Créés par `pnpm db:seed:small|full` (ou `pnpm db:seed:demo`), mot de passe `DEMO_PASSWORD` (défaut `Billetto-Demo-2026!`, développement uniquement) :
+Créés par `pnpm db:seed:small|full` (ou `pnpm db:seed:demo`), mot de passe `DEMO_PASSWORD` du `.env` (développement uniquement, jamais en production) :
 
 | E-mail | Rôle |
 |--------|------|

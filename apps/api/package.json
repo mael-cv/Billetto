@@ -2,6 +2,9 @@
   "name": "@billetto/api",
   "private": true,
   "version": "0.1.0",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",

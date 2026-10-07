@@ -25,6 +25,7 @@ export interface Fixture {
   stop(): Promise<void>;
 }
 
+// security-audit-ignore: generic-secret -- compte de la fixture vulnérable (tests d'acceptance, jamais déployée)
 const DEMO_PASSWORD = "Fixture-Demo-2026!";
 
 export async function startFixture(password = DEMO_PASSWORD): Promise<Fixture> {
@@ -90,6 +91,7 @@ function handle(
     // --- Auth ---
     if (path === "/api/v1/auth/csrf" && method === "GET") {
       // VULN weak cookie : cookie "auth_token" sans HttpOnly/Secure/SameSite.
+      // security-audit-ignore: generic-secret -- jeton CSRF fixe volontaire de la fixture vulnérable
       return send(200, { csrfToken: "fixture-csrf-token" }, {
         "set-cookie": "auth_token=abc123; Path=/",
       });
@@ -182,6 +184,7 @@ function handle(
       return send(302, "", { location: target });
     }
     if (path === "/api/v1/honeypot/secret" && method === "GET") {
+      // security-audit-ignore: generic-secret -- honeypot : faux secret exposé exprès
       return send(200, { fakeApiKey: "HONEYPOT-not-a-real-secret" });
     }
 

@@ -3,6 +3,8 @@ import type { WhiteboxCheck, WhiteboxContext, CheckResult } from "../../core/che
 import type { FindingInput, Severity } from "../../core/finding";
 import { walkFiles, readFileSafe, GitignoreMatcher } from "../fs-util";
 import { score, VECTORS } from "../../core/score";
+import { applySuppression } from "../suppression";
+import { runScanner } from "../../scanners/registry";
 
 /**
  * SAST par règles déterministes (TS/JS/SQL). Best-effort, pensé pour éviter les
@@ -63,7 +65,7 @@ export const sastCheck: WhiteboxCheck = {
         for (const rule of RULES) {
           if (rule.rx.test(line) && !(rule.ignore && rule.ignore.test(line))) {
             const s = ruleScore(rule.severity);
-            findings.push({
+            findings.push(...applySuppression({
               title: rule.title,
               severity: rule.severity,
               confidence: 0.6,
@@ -80,13 +82,21 @@ export const sastCheck: WhiteboxCheck = {
               reproduction: [`${rel}:${i + 1} — motif ${rule.id}`],
               remediation: rule.remediation,
               retestable: false,
-            });
+            }, lines, i, rule.id, rel));
           }
         }
       }
     }
 
-    return { findings, coverage: "TESTED", coverageNote: `${files.length} fichiers analysés` };
+    // Scanner SAST externe optionnel (semgrep). NOT_INSTALLED/désactivé => no-op.
+    let scannerNote = "semgrep non installé";
+    const semgrep = await runScanner("semgrep", ctx.repoRoot, ctx.config);
+    if (semgrep.installed) {
+      scannerNote = `semgrep : ${semgrep.findings.length} findings`;
+      findings.push(...semgrep.findings);
+    }
+
+    return { findings, coverage: "TESTED", coverageNote: `${files.length} fichiers analysés ; ${scannerNote}` };
   },
 };
 

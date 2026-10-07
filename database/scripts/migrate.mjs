@@ -52,4 +52,20 @@ if (hasAppRole) {
   }
 }
 
+// Compte BI / pgAdmin (lecture seule, migration 016) : même principe, READONLY_DB_PASSWORD.
+const hasBiRole = psql(['-At', '-c', "SELECT 1 FROM pg_roles WHERE rolname = 'billetto_bi'"], {
+  capture: true,
+}).trim();
+if (hasBiRole) {
+  if (process.env.READONLY_DB_PASSWORD) {
+    psql(['-v', `bi_password=${process.env.READONLY_DB_PASSWORD}`], {
+      input: "ALTER ROLE billetto_bi WITH LOGIN PASSWORD :'bi_password';\n",
+    });
+    console.log('» billetto_bi : LOGIN activé (mot de passe depuis READONLY_DB_PASSWORD)');
+  } else {
+    psql(['-c', 'ALTER ROLE billetto_bi NOLOGIN']);
+    console.warn('» READONLY_DB_PASSWORD absent : billetto_bi reste NOLOGIN');
+  }
+}
+
 console.log('✓ migrations à jour');

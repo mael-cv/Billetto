@@ -31,7 +31,7 @@ lifecycle:
   health_path: /health
   health_timeout_ms: 60000
   # Commande lancée si la cible est injoignable (auto-start). Vide = pas d'auto-start.
-  start_command: ""
+  start_command: "docker compose up -d --wait api"
   # Exemple : "docker compose up -d --wait api"  ou  "pnpm dev"
 
 # Brute force borné et contrôlé (jamais massif).
@@ -53,7 +53,7 @@ scanners:
   gitleaks: { enabled: true }
   trivy: { enabled: true }
   osv-scanner: { enabled: true }
-  nuclei: { enabled: false }
+  nuclei: { enabled: true }
   zap: { enabled: false }
 
 # Scan de secrets : respecte .gitignore par défaut (--all-files pour tout inclure).

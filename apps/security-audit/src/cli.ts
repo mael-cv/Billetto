@@ -3,7 +3,7 @@
 
 import { parseArgs } from "node:util";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { loadConfig, resolveFromConfig, type ProfileName } from "./core/config";
 import { AuditError, ExitCode, type ExitCodeValue } from "./core/exit-codes";
 import { Logger, type LogLevel } from "./core/logger";
@@ -18,6 +18,14 @@ import { ReportStore } from "./core/report-store";
 import { retestFinding } from "./core/retest";
 import { severityCounts, SEVERITIES } from "./reporting/report";
 import type { WhiteboxEngine } from "./whitebox";
+
+// Comme database/scripts/psql.mjs : le .env racine fournit DEMO_PASSWORD (accounts.password_env).
+// Les variables déjà définies (CI) priment.
+try {
+  process.loadEnvFile(resolve(__dirname, "..", "..", "..", ".env"));
+} catch {
+  /* pas de .env : environnement courant */
+}
 
 const HELP = `security-audit — plateforme d'audit (black-box + white-box + infra)
 

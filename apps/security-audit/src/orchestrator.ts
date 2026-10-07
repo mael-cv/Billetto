@@ -21,7 +21,7 @@ import { selectWhitebox, type WhiteboxEngine } from "./whitebox";
 import { correlate } from "./correlation";
 import { dedupe } from "./core/dedup";
 import { classifyHoneypots } from "./pentest/honeypots";
-import { scannerStatus } from "./scanners/registry";
+import { scannerStatus, runScanner } from "./scanners/registry";
 import type { ReportData, ReportMeta } from "./reporting/report";
 
 const ALL_CATEGORIES: Category[] = [
@@ -120,6 +120,21 @@ export async function runAudit(config: AuditConfig, opts: RunOptions): Promise<R
         const checks = selectChecks(activeProfile(config));
         for (const check of checks) {
           await runBlackboxCheck(check, ctx, coverage, rawFindings, logger);
+        }
+
+        // Scanner DAST externe optionnel (nuclei) : s'exécute contre la cible déjà
+        // validée par assertSafeTarget. NOT_INSTALLED/désactivé => no-op silencieux.
+        try {
+          const nuclei = await runScanner("nuclei", repoRoot ?? process.cwd(), config);
+          if (nuclei.installed) {
+            logger.step(`nuclei : ${nuclei.findings.length} détection(s)`);
+            for (const fi of nuclei.findings) {
+              rawFindings.push(toFinding(fi));
+              coverage.set(fi.category, "TESTED", "nuclei");
+            }
+          }
+        } catch (e) {
+          logger.warn(`nuclei a échoué : ${(e as Error).message}`);
         }
       } finally {
         await callback.stop();

@@ -1,7 +1,7 @@
 {
   "name": "billetto",
   "private": true,
-  "packageManager": "pnpm@10.32.1",
+  "packageManager": "pnpm@10.34.3",
   "scripts": {
     "infra:up": "docker compose up -d --wait postgres pgadmin mailpit",
     "infra:down": "docker compose down",
@@ -23,7 +23,8 @@
     "test:load": "pnpm --filter @billetto/api test:load",
     "test:e2e:web": "pnpm --filter @billetto/web test:e2e",
     "security-audit": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts",
-    "security-audit:full": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --full"
+    "security-audit:full": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --full",
+    "security-audit:install-scanners": "pnpm --filter @billetto/security-audit install-scanners"
   },
   "devDependencies": {
     "@prisma/client": "6.19.3",

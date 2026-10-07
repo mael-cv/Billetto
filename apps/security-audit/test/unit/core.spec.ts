@@ -104,6 +104,7 @@ describe("evidence / redaction", () => {
   });
 
   it("redacte un JWT dans une chaîne", () => {
+    // security-audit-ignore: jwt -- JWT factice (signature invalide) pour tester la redaction
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9.abcDEF123456";
     expect(redactString(`token=${jwt}`)).toContain("[REDACTED_JWT]");
   });

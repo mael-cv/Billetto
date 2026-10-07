@@ -13,6 +13,7 @@ try {
 
 export const RUN = `${Date.now()}`;
 export const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'Billetto-Demo-2026!';
+// security-audit-ignore: generic-secret -- mot de passe des comptes créés par les tests e2e
 export const TEST_PASSWORD = 'Mot-de-passe-e2e-2026!';
 
 export function testConfig(overrides: Partial<Record<keyof AppConfig, string>> = {}): AppConfig {
