@@ -75,6 +75,7 @@ jobs:
           cp .env.example .env
           PG_PASSWORD="ci-$(openssl rand -hex 12)"
           APP_PASSWORD="ci-app-$(openssl rand -hex 12)"
+          WEBHOOK_SECRET="ci-webhook-$(openssl rand -hex 32)"
           sed -i \
             -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASSWORD}|" \
             -e "s|^PGADMIN_DEFAULT_PASSWORD=.*|PGADMIN_DEFAULT_PASSWORD=ci-$(openssl rand -hex 8)|" \
@@ -82,6 +83,7 @@ jobs:
             -e "s|^APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${APP_PASSWORD}|" \
             -e "s|^APP_DATABASE_URL=.*|APP_DATABASE_URL=postgresql://billetto_app:${APP_PASSWORD}@localhost:5433/billetto|" \
             -e "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" \
+            -e "s|^PAYMENTS_WEBHOOK_SECRET=.*|PAYMENTS_WEBHOOK_SECRET=${WEBHOOK_SECRET}|" \
             -e "s|^SMTP_URL=.*|SMTP_URL=|" \
             .env
 

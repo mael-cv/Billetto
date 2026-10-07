@@ -33,7 +33,7 @@ Seed volumineux pour les benchmarks (1,8 M de billets) :
 pnpm db:seed:full
 ```
 
-Stack complète en conteneurs : `docker compose up -d --wait`. Compose utilise le profil local (`NODE_ENV=development`, site HTTP sur `localhost:3000`, cookies non-Secure). En production, définissez explicitement `NODE_ENV=production`, `CORS_ORIGIN=https://<domaine-du-frontend>` et `COOKIE_SECURE=true` derrière un reverse proxy TLS ; ne réutilisez pas les valeurs locales.
+Stack complète en conteneurs : `docker compose up -d --wait`. Avant de démarrer Compose, configurez `PAYMENTS_WEBHOOK_SECRET` dans `.env` à l'aide de la commande de génération indiquée dans `.env.example` ; Compose refuse une valeur absente ou vide. Compose utilise le profil local (`NODE_ENV=development`, site HTTP sur `localhost:3000`, cookies non-Secure). En production, définissez explicitement `NODE_ENV=production`, `CORS_ORIGIN=https://<domaine-du-frontend>` et `COOKIE_SECURE=true` derrière un reverse proxy TLS ; ne réutilisez pas les valeurs locales.
 
 ## Services
 
