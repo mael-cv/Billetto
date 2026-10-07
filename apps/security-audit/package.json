@@ -11,6 +11,7 @@
     "pentest": "tsx src/cli.ts --pentest",
     "pentest:full": "tsx src/cli.ts --pentest --full",
     "whitebox": "tsx src/cli.ts --sast --secrets --dependencies --infra",
+    "install-scanners": "powershell -ExecutionPolicy Bypass -File scripts/install-scanners.ps1",
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

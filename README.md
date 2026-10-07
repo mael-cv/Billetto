@@ -45,7 +45,7 @@ Stack complète en conteneurs : `docker compose up -d --wait`. Compose utilise l
 | PostgreSQL | localhost:5433               |
 
 Le port hôte PostgreSQL est 5433 pour ne pas entrer en conflit avec une installation locale (modifiable via `POSTGRES_PORT`).
-Dans pgAdmin, le serveur « Billetto (docker) » est préconfiguré ; le mot de passe est celui de `POSTGRES_PASSWORD`.
+Dans pgAdmin, le serveur « Billetto (lecture seule) » est préconfiguré avec le compte `billetto_bi` (lecture seule, sans données personnelles) ; le mot de passe est celui de `READONLY_DB_PASSWORD`, posé par `pnpm db:migrate`. Pour administrer la base, ajouter manuellement une connexion `billetto_owner` (`POSTGRES_PASSWORD`).
 
 ## Commandes
 

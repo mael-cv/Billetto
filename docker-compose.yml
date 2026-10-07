@@ -2,7 +2,7 @@ name: billetto
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-billetto_owner}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant (voir .env.example)}
@@ -20,13 +20,13 @@ services:
 
   # SMTP de développement : capture tous les e-mails (interface web :8025).
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
     ports:
       - "1025:1025"
       - "8025:8025"
 
   pgadmin:
-    image: dpage/pgadmin4:9
+    image: dpage/pgadmin4:9@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@billetto.org}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD manquant}
@@ -79,7 +79,7 @@ services:
       dockerfile: Dockerfile
       target: web
     ports:
-      - "3000:80"
+      - "3000:8080"
     depends_on:
       - api
 

@@ -16,6 +16,7 @@ describe('AllExceptionsFilter', () => {
 
   it('ne divulgue ni message ni stacktrace pour une erreur inattendue', () => {
     const { h, reply } = host();
+    // security-audit-ignore: db-url -- URL factice : vérifie que le filtre ne divulgue pas le message
     const err = new Error('connection string postgres://user:secret@db/billetto');
     new AllExceptionsFilter().catch(err, h);
     expect(reply.status).toHaveBeenCalledWith(500);

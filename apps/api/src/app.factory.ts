@@ -12,6 +12,9 @@ import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 
 const AUTH_ROUTES = /^\/api\/v1\/auth\/(login|register|password)$/;
 
+/** Fonctionnalités navigateur inutiles à une API JSON (non géré par helmet). */
+export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()';
+
 /** Construit l'application (partagé entre main.ts et les tests e2e). */
 export async function createApp(config: AppConfig): Promise<NestFastifyApplication> {
   const silent = config.LOG_LEVEL === 'silent';
@@ -57,6 +60,13 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
     frameguard: { action: 'deny' },
     crossOriginResourcePolicy: { policy: 'same-site' },
   });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', (_req, reply, done) => {
+      reply.header('permissions-policy', PERMISSIONS_POLICY);
+      done();
+    });
   await app.register(cookie);
   await app.register(rateLimit, {
     global: true,
