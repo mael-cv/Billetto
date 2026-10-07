@@ -123,7 +123,8 @@ describe('e-mails : job outbox', () => {
     });
     expect(await job.tick()).toBe(0);
     expect(marks).toEqual([[5, false, 'Error: ECONNREFUSED']]);
-  });
+  // Le job génère les QR avant l'envoi, même si le transport échoue.
+  }, 30_000);
 
   it('sans transport (SMTP_URL absent) : aucun envoi', async () => {
     const outbox: EmailOutboxRepository = { claim: jest.fn(), mark: jest.fn() };

@@ -10,7 +10,7 @@ Un prestataire de paiement notifie l'API par webhook, parfois plusieurs fois et 
 - `traiter_paiement_webhook(evenement_externe_id, type, reservation_id, payload)` (SECURITY DEFINER) : `INSERT … ON CONFLICT DO NOTHING`, puis, seulement si la ligne est nouvelle, `confirmer_reservation` **dans la même transaction**. Si la confirmation échoue, l'insertion est annulée aussi : un rejeu ultérieur peut réussir.
 
 ## API
-- `POST /payments/webhook` : guard dédiée, sans session ni CSRF. Signature HMAC-SHA256 du corps brut avec `PAYMENTS_WEBHOOK_SECRET` (facultatif en développement ; sans secret, les webhooks sont refusés).
+- `POST /payments/webhook` : guard dédiée, sans session ni CSRF. Signature HMAC-SHA256 du corps brut avec `PAYMENTS_WEBHOOK_SECRET`. Docker Compose exige un secret non vide ; hors Compose, sans secret configuré, la garde répond indisponible et refuse le webhook.
 - Un événement déjà reçu renvoie 200 sans rien refaire.
 
 ## Tests
