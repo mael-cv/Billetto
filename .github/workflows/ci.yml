@@ -82,6 +82,7 @@ jobs:
             -e "s|^APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${APP_PASSWORD}|" \
             -e "s|^APP_DATABASE_URL=.*|APP_DATABASE_URL=postgresql://billetto_app:${APP_PASSWORD}@localhost:5433/billetto|" \
             -e "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" \
+            -e "s|^PAYMENTS_WEBHOOK_SECRET=.*|PAYMENTS_WEBHOOK_SECRET=$(openssl rand -hex 32)|" \
             -e "s|^DEMO_PASSWORD=.*|DEMO_PASSWORD=ci-demo-$(openssl rand -hex 12)|" \
             -e "s|^READONLY_DB_PASSWORD=.*|READONLY_DB_PASSWORD=ci-bi-$(openssl rand -hex 12)|" \
             -e "s|^SMTP_URL=.*|SMTP_URL=|" \

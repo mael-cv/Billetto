@@ -7,3 +7,11 @@ onlyBuiltDependencies:
   - "@prisma/engines"
   - prisma
   - esbuild
+# Chaîne d'approvisionnement : délai avant d'adopter une version publiée (minutes),
+# refus d'une version moins « fiable » que la précédente, pas de dépendance transitive exotique (git/tarball).
+minimumReleaseAge: 1440
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+# Versions anciennes publiées sans provenance alors qu'une version antérieure en avait (faux positif connu).
+trustPolicyExclude:
+  - semver@6.3.1

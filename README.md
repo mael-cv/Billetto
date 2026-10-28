@@ -67,7 +67,7 @@ Dans pgAdmin, le serveur « Billetto (lecture seule) » est préconfiguré avec 
 
 ## Webhook de paiement (phase 11)
 
-L’API expose `POST /api/v1/payments/webhook`. Le corps JSON attendu contient `eventId`, `type` et `reservationId`. La signature est le HMAC-SHA256 hexadécimal du corps brut exact, transmis dans `X-Billetto-Signature`. Le secret partagé `PAYMENTS_WEBHOOK_SECRET` doit contenir au moins 32 caractères aléatoires ; configurez-le dans `.env` (voir `.env.example`). Sans secret configuré, l’endpoint répond `503`.
+L’API expose `POST /api/v1/payments/webhook`. Le corps JSON attendu contient `eventId`, `type` et `reservationId`. La signature est le HMAC-SHA256 hexadécimal du corps brut exact, transmis dans `X-Billetto-Signature`. Le secret partagé `PAYMENTS_WEBHOOK_SECRET` doit contenir au moins 32 caractères aléatoires ; configurez-le dans `.env` (voir `.env.example`) : `docker compose` refuse de démarrer sans lui. Une API lancée hors compose sans secret répond `503`.
 
 Le type `payment.succeeded` confirme la réservation. Les autres types, comme `payment.failed`, sont journalisés sans créer de billets. L’identifiant externe est unique : un rejeu concurrent ou ultérieur ne confirme pas une deuxième fois la réservation. Le journal webhook et la confirmation sont dans la même transaction.
 

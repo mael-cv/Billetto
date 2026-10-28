@@ -29,5 +29,12 @@
   "devDependencies": {
     "@prisma/client": "6.19.3",
     "prisma": "6.19.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "fastify": "5.12.5",
+      "deepmerge-ts": "^8.0.2",
+      "source-map-js": "^1.2.2"
+    }
   }
 }

@@ -86,6 +86,7 @@ export class Lifecycle {
 
     this.logger.step(`Auto-start : ${cmd}`);
     // shell: true voulu : start_command est une ligne de commande saisie par l'opérateur dans la config.
+    // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
     this.child = spawn(cmd, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
     this.child.stdout?.on("data", (d: Buffer) => (this.logBuf += d.toString()));
     this.child.stderr?.on("data", (d: Buffer) => (this.logBuf += d.toString()));

@@ -1,0 +1,8 @@
+# Faux positifs historiques de gitleaks (l'historique n'est pas réécrit).
+# Format : <commit>:<fichier>:<règle>:<ligne> (empreinte affichée par `gitleaks detect`).
+
+# Nonce d'exemple de la RFC 6455 (sec-websocket-key), pas un secret ; remplacé depuis par un nonce aléatoire.
+4d98b4f7743cf26059c454b277bcde19c3ec4888:apps/security-audit/src/pentest/websockets.ts:generic-api-key:23
+
+# JWT « alg: none » forgé par un test e2e (rejet attendu en 401) ; aucun secret réel.
+66f67f3e2650d1ed09ec3b7bc1283990bcc18e2a:apps/api/test/api.e2e-spec.ts:jwt:181

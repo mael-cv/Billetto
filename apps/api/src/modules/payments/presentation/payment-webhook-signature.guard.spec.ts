@@ -1,10 +1,10 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { AppConfig } from '../../../common/config/config';
 import type { ExecutionContext } from '@nestjs/common';
 import { PaymentWebhookSignatureGuard } from './payment-webhook-signature.guard';
 
-// security-audit-ignore: generic-secret -- secret HMAC des tests unitaires
-const secret = 'webhook-secret-for-tests-with-at-least-32-characters';
+// Secret éphémère, différent à chaque exécution.
+const secret = randomBytes(32).toString('hex');
 const rawBody = Buffer.from('{"eventId":"evt-1","type":"payment.succeeded","reservationId":1}');
 
 function context(signature?: string, body: Buffer = rawBody): ExecutionContext {

@@ -1,9 +1,12 @@
 # Mises à jour de sécurité et de versions automatisées (PR hebdomadaires).
 # Les actions et images sont épinglées par SHA / digest : Dependabot les fait avancer.
+# cooldown : une version doit avoir quelques jours avant d'être proposée (réduit le risque de paquet compromis).
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    cooldown:
+      default-days: 3
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
@@ -13,6 +16,8 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    cooldown:
+      default-days: 3
     schedule:
       interval: weekly
     groups:
@@ -21,10 +26,14 @@ updates:
 
   - package-ecosystem: docker
     directory: /
+    cooldown:
+      default-days: 3
     schedule:
       interval: weekly
 
   - package-ecosystem: docker-compose
     directory: /
+    cooldown:
+      default-days: 3
     schedule:
       interval: weekly

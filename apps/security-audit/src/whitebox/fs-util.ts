@@ -111,6 +111,8 @@ function toRegex(glob: string): RegExp {
     .replace(/\*/g, "[^/]*")
     .replace(/::DOUBLESTAR::/g, ".*")
     .replace(/\?/g, "[^/]");
+  // Glob issu des fichiers .gitignore du dépôt, entièrement échappé ci-dessus.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   return new RegExp(`^${escaped}$`);
 }
 
