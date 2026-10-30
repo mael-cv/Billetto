@@ -66,11 +66,11 @@ Source Mermaid : [`schemas/mcd.mmd`](schemas/mcd.mmd). Entités : ORGANISATEUR, 
 
 Source : [`schemas/mld.mmd`](schemas/mld.mmd). Règles de passage appliquées :
 
-- chaque entité → une table avec une clé technique `bigint GENERATED ALWAYS AS IDENTITY` (décision D4) ; les clés naturelles deviennent des `UNIQUE` (`utilisateurs.email`, `evenements.slug`, `billets.code`, `paiements.reference`, `(tarifs.evenement_id, nom)`, `(evenement_attributs.evenement_id, cle)`) ;
+- chaque entité → une table avec une clé technique `bigint GENERATED ALWAYS AS IDENTITY` ; les clés naturelles deviennent des `UNIQUE` (`utilisateurs.email`, `evenements.slug`, `billets.code`, `paiements.reference`, `(tarifs.evenement_id, nom)`, `(evenement_attributs.evenement_id, cle)`) ;
 - associations 1,n → clé étrangère côté n (`evenements.organisateur_id`, `billets.commande_id`…), toutes `NOT NULL` sauf `type_evenements.parent_id` (racine) et `utilisateurs.organisateur_id` (seulement pour un organisateur : `CHECK ((role_app = 'organizer') = (organisateur_id IS NOT NULL))`) ;
 - association n,n `amitié` → table `amities (utilisateur_id, ami_id, statut)` avec `UNIQUE` et `CHECK (utilisateur_id <> ami_id)` ;
-- énumérations en `text` + `CHECK` (décision D5) plutôt qu'en `ENUM` pour pouvoir ajouter une valeur par simple migration (`commandes.statut` a reçu `en_attente_virement` en 009) ;
-- montants en `numeric(10,2)` / `numeric(12,2)`, jamais en flottant (D7) ; instants en `timestamptz`, le fuseau d'affichage est une donnée de l'événement (`fuseau_horaire`, validé par trigger) ;
+- énumérations en `text` + `CHECK` plutôt qu'en `ENUM` pour pouvoir ajouter une valeur par simple migration (`commandes.statut` a reçu `en_attente_virement` en 009) ;
+- montants en `numeric(10,2)` / `numeric(12,2)`, jamais en flottant ; instants en `timestamptz`, le fuseau d'affichage est une donnée de l'événement (`fuseau_horaire`, validé par trigger) ;
 - `journal_tarifs` n'a volontairement **pas** de clé étrangère : l'audit doit survivre à la suppression d'un tarif.
 
 Le schéma est en 3NF : chaque attribut non clé dépend de la clé, de toute la clé et rien que de la clé ; les données dérivées (places restantes, chiffre d'affaires, taux de remplissage) ne sont pas stockées mais calculées par fonctions et vues (`places_restantes()`, `v_ventes_par_evenement`, `v_remplissage`), sauf la vue matérialisée `mv_ventes_quotidiennes` rafraîchie explicitement. La seule exception assumée est `evenement_attributs` (EAV) pour des caractéristiques variables par événement, validées par le trigger `trg_evenement_attributs_validate`.
