@@ -8,11 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import './psql.mjs'; // charge .env
 
-const password = process.env.APP_DB_PASSWORD;
-if (!password) {
-  console.error('✗ APP_DB_PASSWORD absent : impossible de tester la connexion billetto_app');
-  process.exit(1);
-}
+const password = process.env.APP_DB_PASSWORD ?? 'billetto_app_pass';
 
 // Une invocation = une session. Les commandes sont envoyées sur l'entrée standard.
 function asApp(sql) {
