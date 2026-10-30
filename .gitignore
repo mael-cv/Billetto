@@ -42,3 +42,10 @@ doc/security-audit/
 
 # Note de conception initiale (brouillon, non livrée)
 /docs/IMPLEMENT.md
+
+# Artefacts Playwright
+apps/web/test-results/
+apps/web/playwright-report/
+
+# Sauvegardes locales (scripts/backup.sh)
+backups/

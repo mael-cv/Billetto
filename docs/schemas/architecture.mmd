@@ -1,0 +1,33 @@
+flowchart LR
+    subgraph Client
+        WEB["Front React 19 / Vite<br/>(nginx :3000)"]
+    end
+    subgraph API["API NestJS + Fastify (:3001)"]
+        REST["/api/v1 — REST, cookies HttpOnly, CSRF, rate-limit"]
+        PRISMA["Prisma (\$queryRaw) + SET LOCAL ROLE / app.user_id"]
+        MONGODRV["Driver MongoDB (find, aggregate, replaceOne, TTL)"]
+    end
+    subgraph PG["PostgreSQL 17 — source de vérité"]
+        T1["organisateurs, lieux, type_evenements, evenements, tarifs"]
+        T2["utilisateurs, commandes, billets, paiements, reservations,<br/>liste_attente, billets_scans, emails_sortants, paiement_webhooks"]
+        V["vues v_ventes_par_evenement, v_remplissage,<br/>mv_ventes_quotidiennes"]
+        F["fonctions acheter_billet, scanner_billet…<br/>triggers, RLS, rôles billetto_app / billetto_bi"]
+    end
+    subgraph MG["MongoDB 7 — base documentaire"]
+        C1["event_pages (1 doc / événement)"]
+        C2["avis (réponse imbriquée)"]
+        C3["activites (journal, TTL 90 j)"]
+        C4["event_templates, ticket_templates"]
+    end
+    INIT["Conteneur init<br/>migrations SQL → seed SQL → schéma Mongo → seed Mongo"]
+    MAIL["Mailpit (SMTP dev)"]
+    PGA["pgAdmin (compte billetto_bi lecture seule)"]
+
+    WEB -- "HTTP JSON" --> REST
+    REST --> PRISMA --> PG
+    REST --> MONGODRV --> MG
+    REST -- "e-mails" --> MAIL
+    INIT --> PG
+    INIT --> MG
+    PGA --> PG
+    PG -. "ids partagés : evenementId, utilisateurId, organisateurId" .- MG

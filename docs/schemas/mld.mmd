@@ -1,0 +1,160 @@
+erDiagram
+    organisateurs {
+        bigint id PK
+        text nom
+        text email UK
+        text slug UK
+    }
+    lieux {
+        bigint id PK
+        text nom
+        text adresse
+        text ville
+        text code_postal
+        integer capacite
+    }
+    type_evenements {
+        bigint id PK
+        bigint parent_id FK "NULL = racine"
+        text nom
+    }
+    evenements {
+        bigint id PK
+        bigint organisateur_id FK
+        bigint lieu_id FK
+        bigint type_evenement_id FK
+        text nom
+        text slug UK
+        text description
+        timestamptz debut
+        timestamptz fin
+        text statut "CHECK draft|published|cancelled|finished"
+        boolean en_ligne
+        text fuseau_horaire
+        interval delai_annulation
+    }
+    evenement_attributs {
+        bigint id PK
+        bigint evenement_id FK
+        text cle "UNIQUE (evenement_id, cle)"
+        text valeur
+    }
+    tarifs {
+        bigint id PK
+        bigint evenement_id FK
+        text nom "UNIQUE (evenement_id, nom)"
+        numeric prix "CHECK >= 0"
+        integer quota "CHECK > 0"
+        timestamptz date_debut_vente
+        timestamptz date_fin_vente
+        boolean actif
+    }
+    utilisateurs {
+        bigint id PK
+        text email UK
+        text password_hash
+        text prenom
+        text nom
+        text role_app "CHECK visitor|organizer|admin"
+        bigint organisateur_id FK "NULL sauf organizer"
+        integer auth_version
+    }
+    amities {
+        bigint id PK
+        bigint utilisateur_id FK
+        bigint ami_id FK
+        text statut
+    }
+    commandes {
+        bigint id PK
+        bigint utilisateur_id FK
+        text statut "CHECK pending|paid|cancelled|refunded|en_attente_virement"
+        numeric montant_total
+        timestamptz created_at
+    }
+    billets {
+        bigint id PK
+        bigint tarif_id FK
+        bigint commande_id FK
+        bigint utilisateur_id FK
+        uuid code UK
+        numeric prix_paye
+        text code_verification
+        timestamptz created_at
+    }
+    paiements {
+        bigint id PK
+        bigint commande_id FK
+        text reference UK
+        text type "CHECK charge|refund"
+        numeric montant
+        text statut
+    }
+    journal_tarifs {
+        bigint id PK
+        bigint tarif_id "sans FK (audit)"
+        numeric ancien_prix
+        numeric nouveau_prix
+        bigint auteur_id
+    }
+    reservations {
+        bigint id PK
+        bigint tarif_id FK
+        bigint utilisateur_id FK
+        bigint commande_id FK
+        integer quantite
+        timestamptz expire_a
+        text statut
+    }
+    liste_attente {
+        bigint id PK
+        bigint tarif_id FK
+        bigint utilisateur_id FK
+        bigint reservation_id FK
+        integer quantite
+        text statut
+    }
+    billets_scans {
+        bigint id PK
+        bigint billet_id FK
+        bigint evenement_id FK
+        uuid client_scan_id UK
+        text resultat
+        timestamptz scanne_a
+    }
+    paiement_webhooks {
+        bigint id PK
+        text event_id UK
+        bigint reservation_id FK
+        text type
+    }
+    emails_sortants {
+        bigint id PK
+        bigint utilisateur_id FK
+        bigint commande_id FK
+        bigint liste_attente_id FK
+        text statut
+    }
+
+    organisateurs ||--o{ evenements : organisateur_id
+    lieux ||--o{ evenements : lieu_id
+    type_evenements ||--o{ evenements : type_evenement_id
+    type_evenements ||--o{ type_evenements : parent_id
+    evenements ||--o{ evenement_attributs : evenement_id
+    evenements ||--o{ tarifs : evenement_id
+    organisateurs ||--o{ utilisateurs : organisateur_id
+    utilisateurs ||--o{ amities : utilisateur_id
+    utilisateurs ||--o{ commandes : utilisateur_id
+    commandes ||--|{ billets : commande_id
+    tarifs ||--o{ billets : tarif_id
+    utilisateurs ||--o{ billets : utilisateur_id
+    commandes ||--o{ paiements : commande_id
+    tarifs ||--o{ reservations : tarif_id
+    utilisateurs ||--o{ reservations : utilisateur_id
+    reservations |o--o| commandes : commande_id
+    tarifs ||--o{ liste_attente : tarif_id
+    utilisateurs ||--o{ liste_attente : utilisateur_id
+    billets ||--o{ billets_scans : billet_id
+    evenements ||--o{ billets_scans : evenement_id
+    reservations ||--o{ paiement_webhooks : reservation_id
+    utilisateurs ||--o{ emails_sortants : utilisateur_id

@@ -1,0 +1,33 @@
+erDiagram
+    ORGANISATEUR ||--o{ EVENEMENT : "organise (1,n)"
+    LIEU ||--o{ EVENEMENT : "accueille (1,n)"
+    TYPE_EVENEMENT ||--o{ EVENEMENT : "classe (1,n)"
+    TYPE_EVENEMENT ||--o{ TYPE_EVENEMENT : "est parent de (0,n)"
+    EVENEMENT ||--o{ ATTRIBUT : "est décrit par (0,n)"
+    EVENEMENT ||--o{ TARIF : "propose (1,n)"
+    ORGANISATEUR ||--o{ UTILISATEUR : "emploie (0,n)"
+    UTILISATEUR ||--o{ COMMANDE : "passe (0,n)"
+    COMMANDE ||--|{ BILLET : "contient (1,n)"
+    TARIF ||--o{ BILLET : "est vendu comme (0,n)"
+    UTILISATEUR ||--o{ BILLET : "détient (0,n)"
+    COMMANDE ||--o{ PAIEMENT : "est réglée par (0,n)"
+    UTILISATEUR }o--o{ UTILISATEUR : "amitié"
+    TARIF ||--o{ RESERVATION : "bloque (0,n)"
+    UTILISATEUR ||--o{ RESERVATION : "pose (0,n)"
+    TARIF ||--o{ INSCRIPTION_ATTENTE : "file FIFO (0,n)"
+    UTILISATEUR ||--o{ INSCRIPTION_ATTENTE : "s'inscrit (0,n)"
+    BILLET ||--o{ SCAN : "est scanné (0,n)"
+
+    ORGANISATEUR { string nom  string email  string slug }
+    LIEU { string nom  string adresse  string ville  string code_postal  int capacite }
+    TYPE_EVENEMENT { string nom }
+    EVENEMENT { string nom  string slug  text description  datetime debut  datetime fin  string statut  bool en_ligne  string fuseau_horaire }
+    ATTRIBUT { string cle  string valeur }
+    TARIF { string nom  decimal prix  int quota  datetime date_debut_vente  datetime date_fin_vente  bool actif }
+    UTILISATEUR { string email  string password_hash  string prenom  string nom  string role_app }
+    COMMANDE { string statut  decimal montant_total  datetime created_at }
+    BILLET { uuid code  decimal prix_paye  string code_verification }
+    PAIEMENT { string reference  string type  decimal montant  string statut }
+    RESERVATION { int quantite  datetime expire_a  string statut }
+    INSCRIPTION_ATTENTE { int quantite  string statut  datetime created_at }
+    SCAN { uuid client_scan_id  string resultat  datetime scanne_a }
