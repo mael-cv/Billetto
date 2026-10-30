@@ -9,7 +9,7 @@ const nosqlUnavailable = (): ApiError =>
 /**
  * Templates visuels des événements et des billets, stockés dans MongoDB.
  * Les documents par défaut sont créés par `database/scripts/init-auto.mjs`
- * (seed `database/seed/default-templates.mjs`) ; l'API ne conserve aucun repli en mémoire.
+ * (`database/nosql/seed-nosql.mjs`, templates dans `database/nosql/templates.mjs`) ; l'API ne conserve aucun repli en mémoire.
  */
 @Injectable()
 export class TemplatesService {

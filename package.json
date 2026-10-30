@@ -25,7 +25,10 @@
     "test:e2e:web": "pnpm --filter @billetto/web test:e2e",
     "security-audit": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts",
     "security-audit:full": "pnpm --filter @billetto/security-audit exec tsx src/cli.ts --full",
-    "security-audit:install-scanners": "pnpm --filter @billetto/security-audit install-scanners"
+    "security-audit:install-scanners": "pnpm --filter @billetto/security-audit install-scanners",
+    "db:seed:nosql": "pnpm --filter @billetto/database seed:nosql",
+    "db:queries:nosql": "pnpm --filter @billetto/database queries:nosql",
+    "db:test:nosql": "pnpm --filter @billetto/database test:nosql"
   },
   "devDependencies": {
     "@prisma/client": "6.19.3",

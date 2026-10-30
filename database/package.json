@@ -10,7 +10,10 @@
     "test": "node scripts/test.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "setup": "node scripts/init-auto.mjs"
+    "setup": "node scripts/init-auto.mjs",
+    "seed:nosql": "node nosql/seed-nosql.mjs",
+    "queries:nosql": "node nosql/queries.mjs",
+    "test:nosql": "node nosql/tests/nosql.test.mjs"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",
