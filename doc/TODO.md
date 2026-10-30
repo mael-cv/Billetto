@@ -17,7 +17,7 @@ Grille : `Projet-BDD-Grille-evaluation.pdf` · présentation : [../docs/presenta
 - ✅ `docker-compose.yml` : défauts de démonstration pour tous les secrets, `.env` les remplace
 - ✅ `.env.example` aligné, avertissement dans `init` quand les défauts sont utilisés
 - ✅ `docs/` versionné (était gitignoré)
-- ⬜ Simulation machine vierge : `docker compose down -v` puis `docker compose --env-file /dev/null up -d --wait` → `/health` ok, comptages SQL + Mongo
+- ✅ Simulation machine vierge (30/10/2026) : `down -v` puis `up -d --build --wait` sans `.env` → 4 min 25 (build inclus), init 23 s, `/health` ok sur les deux bases, 10 000 billets, 100 pages / 2 119 avis / 20 060 activités, front 200, `/events/tendances` répond
 
 ### Étape 2 — base NoSQL justifiée
 - ✅ `database/nosql/schema.mjs` : 5 collections, validateurs `$jsonSchema`, index unique / partiel / texte / TTL
