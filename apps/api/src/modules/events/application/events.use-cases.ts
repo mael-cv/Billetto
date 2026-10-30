@@ -8,6 +8,7 @@ import { type Page, toPage } from '../../../common/pagination';
 import type { Pagination } from '../../../common/validation/schemas';
 import type { EventDetail, EventFilters, EventInput, EventSummary } from '../domain/event';
 import { EVENTS_REPOSITORY, type EventsRepository } from '../domain/events.repository';
+import { MongoService } from '../../../common/mongodb/mongo.service';
 import { TemplatesService } from '../../templates/templates.service';
 
 export type CatalogScope = 'public' | 'manage';
@@ -46,13 +47,18 @@ export class GetEventUseCase {
     private readonly db: DbContextService,
     @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
     private readonly templates: TemplatesService,
+    private readonly mongo: MongoService,
   ) {}
 
+  /** Lecture croisée : événement PostgreSQL + template MongoDB (celui de sa page éditoriale, sinon par catégorie). */
   async execute(actor: Actor | null, scope: CatalogScope, ref: { id: number } | { slug: string }): Promise<EventDetail> {
     const event = await this.db.run(catalogActor(actor, scope), (tx) => this.events.findByRef(tx, ref));
     // Invisible (RLS) et inexistant sont indistinguables : 404 dans les deux cas.
     if (!event) throw notFound('Événement');
-    const template = await this.templates.resolveEventTemplate(event.type.nom, event.nom);
+    const page = await this.mongo.eventPages.findOne({ evenementId: event.id }, { projection: { templateId: 1 } });
+    const template = page
+      ? await this.templates.getEventTemplate(page.templateId)
+      : await this.templates.resolveEventTemplate(event.type.nom, event.nom);
     return { ...event, template };
   }
 }
@@ -125,11 +131,21 @@ export class DeleteEventUseCase {
   constructor(
     private readonly db: DbContextService,
     @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
+    private readonly mongo: MongoService,
   ) {}
 
+  /**
+   * Suppression SQL puis nettoyage des documents MongoDB rattachés (page, avis,
+   * activités) : pas de clé étrangère inter-bases, la cohérence est applicative.
+   */
   async execute(actor: Actor, id: number): Promise<void> {
     const count = await this.db.run(toDbActor(actor), (tx) => this.events.delete(tx, id));
     if (count === 0) throw notFound('Événement');
+    await Promise.all([
+      this.mongo.eventPages.deleteOne({ evenementId: id }),
+      this.mongo.avis.deleteMany({ evenementId: id }),
+      this.mongo.activites.deleteMany({ evenementId: id }),
+    ]);
   }
 }
 

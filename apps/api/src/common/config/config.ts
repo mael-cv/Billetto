@@ -13,7 +13,7 @@ export const configSchema = z.object({
   MONGO_URL: z
     .string()
     .regex(/^mongodb(\+srv)?:\/\//, 'URL MongoDB attendue')
-    .default('mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_templates?authSource=admin'),
+    .default('mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_nosql?authSource=admin'),
   JWT_SECRET: z.string().min(32, 'au moins 32 caractères'),
   // Facultatif en développement sans prestataire ; requis pour accepter un webhook.
   PAYMENTS_WEBHOOK_SECRET: z.preprocess(

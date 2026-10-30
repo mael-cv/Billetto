@@ -27,6 +27,7 @@ function setup() {
   const repo: jest.Mocked<EventsRepository> = {
     list: jest.fn(),
     findByRef: jest.fn().mockResolvedValue({ id: 10 } as EventDetail),
+    findSummariesByIds: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockResolvedValue(10),
     update: jest.fn().mockResolvedValue(0),
     delete: jest.fn(),

@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaService } from '../src/common/database/prisma.service';
+import { MongoService } from '../src/common/mongodb/mongo.service';
 import { cleanFixtures, createFixtures, email, type Fixtures } from './fixtures';
 import { Client, DEMO_PASSWORD, owner, RUN, startApp, TEST_PASSWORD, testConfig } from './support';
 
@@ -49,7 +50,7 @@ describe('API Billetto (e2e)', () => {
     it('GET /health', async () => {
       const res = await anonyme.get('/health');
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ status: 'ok', database: 'up' });
+      expect(res.json()).toEqual({ status: 'ok', database: 'up', mongodb: 'up' });
     });
   });
 
@@ -861,6 +862,141 @@ describe('API Billetto (e2e)', () => {
       const res = await admin.patch(`/users/${id}/role`, { role: 'organizer', organisateurId: null });
       expect(res.statusCode).toBe(422);
       expect(res.json().error).toBe('CONTRAINTE_VIOLEE');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('base documentaire MongoDB (pages, avis, activités)', () => {
+    let avisId: string;
+
+    afterAll(async () => {
+      // Documents rattachés aux événements de test (PostgreSQL les supprime dans cleanFixtures).
+      const mongo = app.get(MongoService);
+      await Promise.all([
+        mongo.eventPages.deleteMany({ evenementId: fx.eventFutur }),
+        mongo.avis.deleteMany({ evenementId: fx.eventFutur }),
+        mongo.activites.deleteMany({ evenementId: fx.eventFutur }),
+      ]);
+    });
+
+    it('page d’événement sans document : contenu par défaut, croisé avec l’événement SQL', async () => {
+      const res = await anonyme.get(`/events/${fx.eventFutur}/page`);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        personnalisee: false,
+        evenement: { id: fx.eventFutur, statut: 'published' },
+        page: { evenementId: fx.eventFutur, programme: [] },
+        template: { templateId: expect.any(String) },
+      });
+      expect((await anonyme.get('/events/slug-inconnu/page')).statusCode).toBe(404);
+    });
+
+    it('PUT page : un autre organisateur → 404 (RLS), le propriétaire → page enregistrée dans MongoDB', async () => {
+      const page = {
+        templateId: 'concert',
+        tags: ['nocturne'],
+        programme: [{ heure: '2027-01-01T20:00:00Z', scene: 'Grande scène', titre: 'Ouverture', artiste: 'E2E Band', dureeMin: 45 }],
+        medias: [{ type: 'image', url: 'https://example.test/affiche.jpg', legende: 'Affiche' }],
+        sections: [{ title: 'Accès', content: 'Métro ligne 1' }],
+        faq: [{ question: 'Vestiaire ?', answer: 'Oui' }],
+      };
+      expect((await orgaB.request('PUT', `/events/${fx.eventFutur}/page`, page)).statusCode).toBe(404);
+      expect((await visiteur.request('PUT', `/events/${fx.eventFutur}/page`, page)).statusCode).toBe(403);
+
+      const invalide = await orgaA.request('PUT', `/events/${fx.eventFutur}/page`, { ...page, medias: [{ type: 'image', url: 'ftp://x' }] });
+      expect(invalide.statusCode).toBe(400);
+      expect((await orgaA.request('PUT', `/events/${fx.eventFutur}/page`, { ...page, templateId: 'inexistant' })).statusCode).toBe(404);
+
+      const ok = await orgaA.request('PUT', `/events/${fx.eventFutur}/page`, page);
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toMatchObject({ evenementId: fx.eventFutur, templateId: 'concert', programme: [{ artiste: 'E2E Band' }] });
+
+      // Relecture croisée : la page vient de MongoDB, l'événement de PostgreSQL, le template est celui de la page.
+      const relu = (await anonyme.get(`/events/${fx.eventFutur}/page`)).json();
+      expect(relu).toMatchObject({ personnalisee: true, page: { tags: ['nocturne'] }, template: { templateId: 'concert' } });
+      expect((await anonyme.get(`/events/${fx.eventFutur}`)).json().template.templateId).toBe('concert');
+    });
+
+    it('avis : billet payé requis (403), création (201), doublon (409), note invalide (400)', async () => {
+      expect((await anonyme.post(`/events/${fx.eventFutur}/avis`, { note: 5, commentaire: 'x' })).statusCode).toBe(401);
+      const sansBillet = await visiteur2.post(`/events/${fx.eventFutur}/avis`, { note: 5, commentaire: 'Super' });
+      expect(sansBillet.statusCode).toBe(403);
+      expect(sansBillet.json().error).toBe('BILLET_REQUIS');
+
+      expect((await visiteur.post(`/events/${fx.eventFutur}/avis`, { note: 7, commentaire: 'x' })).statusCode).toBe(400);
+
+      const res = await visiteur.post(`/events/${fx.eventFutur}/avis`, { note: 4, titre: 'Bien', commentaire: 'Très bonne soirée' });
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toMatchObject({ evenementId: fx.eventFutur, note: 4, prenom: 'Camille', utile: 0 });
+      avisId = res.json().id;
+
+      const doublon = await visiteur.post(`/events/${fx.eventFutur}/avis`, { note: 1, commentaire: 'Encore' });
+      expect(doublon.statusCode).toBe(409);
+      expect(doublon.json().error).toBe('DOUBLON');
+    });
+
+    it('liste publique des avis avec statistiques (pipeline d’agrégation)', async () => {
+      const res = await anonyme.get(`/events/${fx.eventFutur}/avis`);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        total: 1,
+        items: [{ id: avisId, note: 4 }],
+        stats: { nbAvis: 1, moyenne: 4, distribution: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 0 }, tauxReponse: 0 },
+      });
+      expect((await anonyme.get(`/events/${fx.eventFutur}/avis?noteMin=5`)).json().total).toBe(0);
+    });
+
+    it('modification par l’auteur seulement ; réponse de l’organisateur propriétaire seulement', async () => {
+      expect((await visiteur2.patch(`/avis/${avisId}`, { note: 1 })).statusCode).toBe(403);
+      expect((await visiteur.patch(`/avis/${avisId}`, { note: 5 })).json().note).toBe(5);
+
+      expect((await orgaB.post(`/avis/${avisId}/reponse`, { texte: 'Merci' })).statusCode).toBe(403);
+      const reponse = await orgaA.post(`/avis/${avisId}/reponse`, { texte: 'Merci pour votre retour' });
+      expect(reponse.statusCode).toBe(200);
+      expect(reponse.json().reponseOrganisateur).toMatchObject({ texte: 'Merci pour votre retour' });
+
+      const mine = (await orgaA.get('/organizer/avis')).json();
+      expect(mine.items.map((a: { id: string }) => a.id)).toContain(avisId);
+      expect((await orgaA.get('/organizer/avis?sansReponse=true')).json().items.map((a: { id: string }) => a.id)).not.toContain(avisId);
+      expect((await anonyme.get(`/events/${fx.eventFutur}/avis`)).json().stats.tauxReponse).toBe(1);
+    });
+
+    it('journal d’activité : écriture explicite, tendances croisées avec PostgreSQL, série de l’organisateur', async () => {
+      const mongo = app.get(MongoService);
+      const avant = await mongo.activites.countDocuments({ evenementId: fx.eventFutur });
+      const rec = await anonyme.post('/activites', { type: 'vue_evenement', evenementId: fx.eventFutur, payload: { source: 'e2e' } });
+      expect(rec.statusCode).toBe(201);
+      expect((await anonyme.post('/activites', { type: 'scan_checkin', evenementId: fx.eventFutur })).statusCode).toBe(400);
+      // Les lectures précédentes (GET /events/:id) et l'achat ont aussi été journalisés par l'API.
+      expect(await mongo.activites.countDocuments({ evenementId: fx.eventFutur })).toBeGreaterThan(avant);
+
+      const tendances = await anonyme.get('/events/tendances?jours=7&limit=5');
+      expect(tendances.statusCode).toBe(200);
+      const items = tendances.json() as { evenementId: number; score: number; evenement: { id: number; statut: string } }[];
+      expect(items.length).toBeGreaterThan(0);
+      expect(items.length).toBeLessThanOrEqual(5);
+      for (const item of items) {
+        expect(item.evenement.id).toBe(item.evenementId);
+        expect(['published', 'finished']).toContain(item.evenement.statut);
+      }
+      expect(items.map((i) => i.score)).toEqual([...items.map((i) => i.score)].sort((a, b) => b - a));
+
+      const serie = await orgaA.get(`/activites/evenements/${fx.eventFutur}?granularite=jour&jours=1`);
+      expect(serie.statusCode).toBe(200);
+      expect(serie.json()[0]).toMatchObject({ total: expect.any(Number), parType: expect.any(Object) });
+      expect((await orgaB.get(`/activites/evenements/${fx.eventFutur}`)).statusCode).toBe(404);
+
+      expect((await visiteur.delete('/activites?avant=2000-01-01')).statusCode).toBe(403);
+      expect((await admin.delete('/activites?avant=2000-01-01')).json()).toEqual({ supprimees: 0 });
+    });
+
+    it('suppressions : avis par son auteur (204), page par l’organisateur (204)', async () => {
+      expect((await visiteur2.delete(`/avis/${avisId}`)).statusCode).toBe(403);
+      expect((await visiteur.delete(`/avis/${avisId}`)).statusCode).toBe(204);
+      expect((await visiteur.delete(`/avis/${avisId}`)).statusCode).toBe(404);
+
+      expect((await orgaA.delete(`/events/${fx.eventFutur}/page`)).statusCode).toBe(204);
+      expect((await anonyme.get(`/events/${fx.eventFutur}/page`)).json().personnalisee).toBe(false);
     });
   });
 

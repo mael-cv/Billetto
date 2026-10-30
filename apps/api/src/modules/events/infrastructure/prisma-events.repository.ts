@@ -124,6 +124,24 @@ export class PrismaEventsRepository implements EventsRepository {
     return { items: rows.map(toSummary), total: toNumber(countRows[0]?.total) };
   }
 
+  async findSummariesByIds(tx: Tx, ids: number[]): Promise<EventSummary[]> {
+    if (ids.length === 0) return [];
+    const rows = await tx.$queryRaw<SummaryRow[]>`
+      SELECT e.id, e.slug, e.nom, e.statut, e.debut, e.fin,
+             l.id AS lieu_id, l.nom AS lieu, l.ville,
+             te.id AS type_id, te.nom AS type,
+             o.nom AS organisateur, prix.prix_min, e.en_ligne, e.fuseau_horaire
+      FROM evenements e
+      JOIN lieux l            ON l.id = e.lieu_id
+      JOIN type_evenements te ON te.id = e.type_evenement_id
+      JOIN organisateurs o    ON o.id = e.organisateur_id
+      LEFT JOIN LATERAL (
+        SELECT min(tr.prix) AS prix_min FROM tarifs tr WHERE tr.evenement_id = e.id AND tr.actif
+      ) prix ON TRUE
+      WHERE e.id IN (${Prisma.join(ids)})`;
+    return rows.map(toSummary);
+  }
+
   async findByRef(tx: Tx, ref: { id: number } | { slug: string }): Promise<EventDetail | null> {
     const where = 'id' in ref ? Prisma.sql`e.id = ${ref.id}` : Prisma.sql`e.slug = ${ref.slug}`;
     const rows = await tx.$queryRaw<DetailRow[]>`

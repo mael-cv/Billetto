@@ -8,6 +8,7 @@ export interface PurchaseResult {
   paiementId: number;
   billetIds: number[];
   montantTotal: string;
+  evenementId: number;
 }
 
 export interface MyTicket extends OrderTicket {

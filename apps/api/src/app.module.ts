@@ -4,7 +4,10 @@ import type { AppConfig } from './common/config/config';
 import { ConfigModule } from './common/config/config.module';
 import { DatabaseModule } from './common/database/database.module';
 import { MongoModule } from './common/mongodb/mongo.module';
+import { ActivityModule } from './modules/activity/activity.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { EventPagesModule } from './modules/event-pages/event-pages.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 import { CheckinModule } from './modules/checkin/checkin.module';
 import { EventTypesModule } from './modules/event-types/event-types.module';
 import { EventsModule } from './modules/events/events.module';
@@ -43,6 +46,10 @@ export class AppModule {
         WaitlistModule,
         CheckinModule,
         NotificationsModule,
+        // Modules documentaires (MongoDB) : croisent les événements PostgreSQL.
+        ActivityModule,
+        EventPagesModule,
+        ReviewsModule,
       ],
     };
   }

@@ -1,5 +1,6 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { mapMongoError } from './mongo-errors';
 import { mapPgError } from './pg-errors';
 
 export interface ErrorBody {
@@ -50,8 +51,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return { statusCode: status, error: exception.name, message: String(response) };
     }
 
-    const pg = mapPgError(exception);
-    if (pg) return { statusCode: pg.status, error: pg.error, message: pg.message };
+    const mapped = mapPgError(exception) ?? mapMongoError(exception);
+    if (mapped) return { statusCode: mapped.status, error: mapped.error, message: mapped.message };
 
     // Erreurs Fastify (payload trop gros, JSON invalide…) : statut conservé, message générique.
     const statusCode = (exception as { statusCode?: unknown })?.statusCode;

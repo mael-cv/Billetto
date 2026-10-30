@@ -4,6 +4,7 @@ import type { Actor } from '../../../auth/domain/actor';
 import { Authenticated, CurrentActor } from '../../../auth/presentation/auth.decorators';
 import { idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
+import { ActivityLogger } from '../../activity/activity-logger.service';
 import { CheckinManifestUseCase, ScanBatchUseCase, ScanTicketUseCase } from '../application/checkin.use-cases';
 
 export const scanSchema = z.strictObject({
@@ -28,18 +29,35 @@ export class CheckinController {
     private readonly scanTicket: ScanTicketUseCase,
     private readonly scanBatch: ScanBatchUseCase,
     private readonly manifestUseCase: CheckinManifestUseCase,
+    private readonly activity: ActivityLogger,
   ) {}
 
   @Post('scan')
   @HttpCode(200)
-  scan(@CurrentActor() actor: Actor, @Body(new ZodPipe(scanSchema)) body: z.infer<typeof scanSchema>) {
-    return this.scanTicket.execute(actor, body);
+  async scan(@CurrentActor() actor: Actor, @Body(new ZodPipe(scanSchema)) body: z.infer<typeof scanSchema>) {
+    const outcome = await this.scanTicket.execute(actor, body);
+    this.activity.record('scan_checkin', {
+      utilisateurId: actor.userId,
+      evenementId: body.evenementId,
+      payload: { resultat: outcome.resultat, rejeu: outcome.rejeu, appareil: body.appareil ?? null, horsLigne: false },
+    });
+    return outcome;
   }
 
   @Post('scan/batch')
   @HttpCode(200)
-  batch(@CurrentActor() actor: Actor, @Body(new ZodPipe(scanBatchSchema)) body: z.infer<typeof scanBatchSchema>) {
-    return this.scanBatch.execute(actor, body.scans);
+  async batch(@CurrentActor() actor: Actor, @Body(new ZodPipe(scanBatchSchema)) body: z.infer<typeof scanBatchSchema>) {
+    const results = await this.scanBatch.execute(actor, body.scans);
+    for (const [i, item] of results.entries()) {
+      const scan = body.scans[i];
+      if (!scan) continue;
+      this.activity.record('scan_checkin', {
+        utilisateurId: actor.userId,
+        evenementId: scan.evenementId,
+        payload: { resultat: item.status === 'done' ? item.resultat : 'erreur', appareil: scan.appareil ?? null, horsLigne: true },
+      });
+    }
+    return results;
   }
 
   @Get('manifest')

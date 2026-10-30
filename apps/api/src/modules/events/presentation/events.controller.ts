@@ -4,6 +4,7 @@ import { Authenticated, CurrentActor, OptionalAuth } from '../../../auth/present
 import type { Actor } from '../../../auth/domain/actor';
 import { idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
+import { ActivityLogger } from '../../activity/activity-logger.service';
 import {
   CreateEventUseCase,
   DeleteEventUseCase,
@@ -36,13 +37,21 @@ export class EventsController {
     private readonly deleteEvent: DeleteEventUseCase,
     private readonly replaceAttributes: ReplaceEventAttributesUseCase,
     private readonly exportParticipants: ExportParticipantsUseCase,
+    private readonly activity: ActivityLogger,
   ) {}
 
   @Get()
   @OptionalAuth()
-  list(@CurrentActor() actor: Actor | null, @Query(new ZodPipe(listEventsQuerySchema)) query: ListEventsQuery) {
+  async list(@CurrentActor() actor: Actor | null, @Query(new ZodPipe(listEventsQuerySchema)) query: ListEventsQuery) {
     const { page, pageSize, scope, ...filters } = query;
-    return this.listEvents.execute(actor, scope, filters, { page, pageSize });
+    const result = await this.listEvents.execute(actor, scope, filters, { page, pageSize });
+    if (filters.q && scope === 'public') {
+      this.activity.record('recherche', {
+        utilisateurId: actor?.userId ?? null,
+        payload: { q: filters.q, resultats: result.total, ...(filters.ville ? { ville: filters.ville } : {}) },
+      });
+    }
+    return result;
   }
 
   /** Export CSV (Excel FR : « ; », BOM UTF-8) des billets de l'événement. */
@@ -63,12 +72,16 @@ export class EventsController {
 
   @Get(':ref')
   @OptionalAuth()
-  get(
+  async get(
     @CurrentActor() actor: Actor | null,
     @Param('ref', new ZodPipe(eventRefSchema)) ref: { id: number } | { slug: string },
     @Query(new ZodPipe(scopeQuerySchema)) query: { scope: Scope },
   ) {
-    return this.getEvent.execute(actor, query.scope, ref);
+    const event = await this.getEvent.execute(actor, query.scope, ref);
+    if (query.scope === 'public') {
+      this.activity.record('vue_evenement', { utilisateurId: actor?.userId ?? null, evenementId: event.id, payload: { source: 'api' } });
+    }
+    return event;
   }
 
   @Post()

@@ -32,8 +32,9 @@ interface TicketRow {
 @Injectable()
 export class PrismaTicketsRepository implements TicketsRepository {
   async purchase(tx: Tx, userId: number, tarifId: number, quantite: number): Promise<PurchaseResult> {
-    const rows = await tx.$queryRaw<PurchaseRow[]>`
-      SELECT commande_id, paiement_id, billet_ids, montant_total
+    const rows = await tx.$queryRaw<(PurchaseRow & { evenement_id: bigint })[]>`
+      SELECT commande_id, paiement_id, billet_ids, montant_total,
+             (SELECT evenement_id FROM tarifs WHERE id = ${tarifId}::bigint) AS evenement_id
       FROM acheter_billet(${userId}::bigint, ${tarifId}::bigint, ${quantite}::integer)`;
     const row = rows[0];
     if (!row) throw new Error('acheter_billet n’a renvoyé aucune ligne');
@@ -42,6 +43,7 @@ export class PrismaTicketsRepository implements TicketsRepository {
       paiementId: toNumber(row.paiement_id),
       billetIds: row.billet_ids.map(toNumber),
       montantTotal: toMoney(row.montant_total),
+      evenementId: toNumber(row.evenement_id),
     };
   }
 

@@ -14,7 +14,7 @@ try {
 
 const user = process.env.MONGO_USER ?? 'billetto_mongo';
 const password = process.env.MONGO_PASSWORD ?? 'billetto_mongo_pass';
-const dbName = process.env.MONGO_DB ?? 'billetto_templates';
+const dbName = process.env.MONGO_DB ?? 'billetto_nosql';
 const filter = process.argv[2];
 
 const files = readdirSync(new URL('./queries/', import.meta.url))

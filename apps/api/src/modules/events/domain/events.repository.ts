@@ -9,6 +9,8 @@ import type { EventDetail, EventFilters, EventInput, EventSummary, Participant }
 export interface EventsRepository {
   list(tx: Tx, filters: EventFilters, pagination: Pagination): Promise<{ items: EventSummary[]; total: number }>;
   findByRef(tx: Tx, ref: { id: number } | { slug: string }): Promise<EventDetail | null>;
+  /** Résumés des événements visibles parmi `ids` (croisement avec MongoDB : tendances). */
+  findSummariesByIds(tx: Tx, ids: number[]): Promise<EventSummary[]>;
   create(tx: Tx, organisateurId: number, input: EventInput): Promise<number>;
   /** Nombre de lignes modifiées (0 si l'événement est invisible pour l'appelant). */
   update(tx: Tx, id: number, input: Partial<EventInput>): Promise<number>;

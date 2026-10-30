@@ -58,7 +58,7 @@ Légende accès : **public** (anonyme accepté), **connecté** (tout rôle), **o
 ### Santé et authentification
 | Méthode | Chemin | Accès | Description |
 |---------|--------|-------|-------------|
-| GET | `/health` | public | `{ status, database }` |
+| GET | `/health` | public | `{ status, database, mongodb }` ; 503 avec le détail si l'une des deux bases manque |
 | GET | `/auth/csrf` | public | Émet le jeton CSRF |
 | POST | `/auth/register` | public | `{ email, password (12–128), prenom, nom }` → 201, compte `visitor`, session ouverte. `409` si e-mail existant |
 | POST | `/auth/login` | public | `{ email, password }` → 200 `{ user, csrfToken }` |
@@ -82,6 +82,28 @@ Légende accès : **public** (anonyme accepté), **connecté** (tout rôle), **o
 | GET | `/event-types/tree` | public | Arbre `{ id, parentId, nom, niveau, chemin }` (`WITH RECURSIVE`) |
 | GET | `/venues` | public | Lieux paginés, filtre `ville` |
 | GET | `/venues/cities` | public | Liste distincte des villes de lieux disponibles (pour le filtre front) |
+
+### Base documentaire MongoDB (pages, avis, activités)
+Chaque endpoint indique sa base : **SQL**, **Mongo** ou **croisé** (lecture ou écriture dans les deux). Schéma et index : `database/nosql/schema.mjs`.
+
+| Méthode | Chemin | Accès | Description |
+|---------|--------|-------|-------------|
+| GET | `/events/:ref/page` | public | **croisé** : événement (PostgreSQL, RLS) + page éditoriale (`event_pages`) + template. `personnalisee: false` si aucune page rédigée |
+| PUT | `/events/:id/page` | orga, admin + CSRF | **croisé** : propriété vérifiée en SQL (404 sinon) puis `replaceOne` upsert du document `{ templateId, tags, programme[], medias[], sections[], faq[] }` ; 404 si `templateId` inconnu |
+| DELETE | `/events/:id/page` | orga, admin | **croisé** : 204 ; 404 si pas de page |
+| GET | `/events/:ref/avis` | public | **croisé** : avis paginés (`noteMin`, `sansReponse`) + `stats` (pipeline `$group` : moyenne, distribution 1..5, taux de réponse) |
+| POST | `/events/:id/avis` | connecté + CSRF | **croisé** : 403 `BILLET_REQUIS` sans billet payé (requête SQL sous rôle acheteur) ; `{ note 1..5, titre?, commentaire }` → 201 ; 409 `DOUBLON` (index unique) ; 400 si note hors 1..5 |
+| PATCH | `/avis/:id` | auteur | **Mongo** : champs partiels ; 403 si pas l'auteur |
+| DELETE | `/avis/:id` | auteur, admin | **Mongo** : 204 |
+| POST | `/avis/:id/reponse` | orga, admin | **croisé** : `{ texte }` ; `$set` du champ imbriqué `reponseOrganisateur` ; 403 si l'événement n'est pas le sien (RLS) |
+| GET | `/organizer/avis` | orga, admin | **croisé** : identifiants d'événements depuis SQL (RLS) puis `$in` Mongo ; `sansReponse=true` |
+| GET | `/events/tendances` | public | **croisé** : score Mongo (`$group`/`$cond` sur 7 j : vue 1, scan 2, achat 5) puis résumés SQL (seuls les événements du catalogue public restent) ; `jours`, `limit` |
+| POST | `/activites` | public (optionnel) | **Mongo** : `{ type: vue_evenement \| recherche, evenementId?, payload? }` → 201 ; les autres types sont émis par l'API (connexion, achat, scan) |
+| GET | `/activites/evenements/:id` | orga, admin | **croisé** : série temporelle `$dateTrunc` (`granularite=heure\|jour`, `jours`) ; 404 si l'événement n'est pas le sien |
+| DELETE | `/activites?avant=` | admin | **Mongo** : purge manuelle (l'index TTL purge à 90 jours) |
+| GET | `/templates/events`, `/templates/events/:id`, `/templates/tickets`, `/templates/tickets/:id` | public | **Mongo** : thèmes visuels |
+
+Hooks d'écriture Mongo émis par l'API (fire-and-forget, jamais bloquants) : `GET /events/:ref` (vue_evenement), `GET /events?q=` (recherche), `POST /auth/login` (connexion), `POST /tickets/purchase` (achat), `POST /checkin/scan[/batch]` (scan_checkin). `DELETE /events/:id` supprime aussi la page, les avis et les activités de l'événement.
 
 ### Achat, billets, commandes
 | Méthode | Chemin | Accès | Description |
@@ -144,7 +166,7 @@ apps/api/src/
     infrastructure/            repository Prisma : $queryRaw paramétré, fonctions SQL, vues
     presentation/              contrôleur, schémas d'entrée
 ```
-Modules : `events`, `pricing`, `event-types`, `venues`, `orders`, `payments`, `tickets`, `users`, `analytics`, `health`.
+Modules : `events`, `pricing`, `event-types`, `venues`, `orders`, `payments`, `tickets`, `users`, `analytics`, `health`, et côté MongoDB `templates`, `event-pages`, `reviews`, `activity` (`common/mongodb` : connexion, types des documents, mapping des erreurs 11000 → 409, 121 → 422).
 
 ## Tests
 ```bash

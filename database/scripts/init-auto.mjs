@@ -72,7 +72,7 @@ if (userCount === 0) {
 console.log('» 4/4 Vérification de la base NoSQL MongoDB...');
 const mongoUrl =
   process.env.MONGO_URL ??
-  'mongodb://billetto_mongo:billetto_mongo_pass@mongodb:27017/billetto_templates?authSource=admin';
+  'mongodb://billetto_mongo:billetto_mongo_pass@mongodb:27017/billetto_nosql?authSource=admin';
 
 let mongoClient = null;
 for (let i = 0; i < 30; i++) {

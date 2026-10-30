@@ -14,7 +14,7 @@ try {
   // valeurs par défaut
 }
 const mongoUrl =
-  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_templates?authSource=admin';
+  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_nosql?authSource=admin';
 
 const client = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 5000 });
 await client.connect();

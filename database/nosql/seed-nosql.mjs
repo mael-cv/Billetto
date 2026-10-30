@@ -17,7 +17,7 @@ import { DEFAULT_EVENT_TEMPLATES, DEFAULT_TICKET_TEMPLATES } from './templates.m
 const SEP = '\x1f';
 const seed = Number(process.env.SEED ?? '20260916');
 const mongoUrl =
-  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_templates?authSource=admin';
+  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_nosql?authSource=admin';
 
 // ---------------------------------------------------------------------------
 // Générateur pseudo-aléatoire déterministe (mulberry32) : même SEED => mêmes documents.

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Post, Res } from '@nestjs/comm
 import type { FastifyReply } from 'fastify';
 import { APP_CONFIG, type AppConfig } from '../../common/config/config';
 import { ZodPipe } from '../../common/validation/zod.pipe';
+import { ActivityLogger } from '../../modules/activity/activity-logger.service';
 import { LoginUseCase } from '../application/login.use-case';
 import { ChangePasswordUseCase } from '../application/change-password.use-case';
 import { RegisterUseCase } from '../application/register.use-case';
@@ -28,6 +29,7 @@ export class AuthController {
     private readonly changePassword: ChangePasswordUseCase,
     private readonly tokens: SessionTokenService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly activity: ActivityLogger,
   ) {}
 
   /** Émet le jeton CSRF à renvoyer dans l'en-tête X-CSRF-Token. */
@@ -43,6 +45,7 @@ export class AuthController {
   @HttpCode(200)
   async doLogin(@Body(new ZodPipe(loginSchema)) body: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
     const actor = await this.login.execute(body.email, body.password);
+    this.activity.record('connexion', { utilisateurId: actor.userId, payload: { role: actor.role, succes: true } });
     return this.openSession(actor, reply);
   }
 

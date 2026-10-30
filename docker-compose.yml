@@ -24,7 +24,7 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-billetto_mongo}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-billetto_mongo_pass}
-      MONGO_INITDB_DATABASE: ${MONGO_DB:-billetto_templates}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-billetto_nosql}
     ports:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
@@ -76,7 +76,7 @@ services:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-billetto_app_pass}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-Billetto-Demo-2026!}
       SEED: ${SEED:-20260916}
-      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_templates}?authSource=admin
+      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_nosql}?authSource=admin
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,7 +94,7 @@ services:
       NODE_ENV: ${NODE_ENV:-development}
       API_PORT: 3001
       APP_DATABASE_URL: postgresql://billetto_app:${APP_DB_PASSWORD:-billetto_app_pass}@postgres:5432/${POSTGRES_DB:-billetto}
-      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_templates}?authSource=admin
+      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_nosql}?authSource=admin
       JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-billetto-0123456789abcdef}
       PAYMENTS_WEBHOOK_SECRET: ${PAYMENTS_WEBHOOK_SECRET:-dev-only-webhook-secret-billetto-0123456789abcdef}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-7200}
