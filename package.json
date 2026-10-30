@@ -10,6 +10,7 @@
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present --filter !@billetto/database test",
     "format": "pnpm -r --if-present format",
+    "db:init": "pnpm --filter @billetto/database run setup",
     "db:migrate": "pnpm --filter @billetto/database migrate",
     "db:reset": "pnpm --filter @billetto/database reset",
     "db:seed:small": "pnpm --filter @billetto/database seed small",

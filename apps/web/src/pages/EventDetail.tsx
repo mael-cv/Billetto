@@ -309,10 +309,54 @@ export function EventDetailPage({ slug }: { slug: string }) {
               ))}
             </div>
 
+            {event.template && (
+              <div className="mt-6 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs font-semibold text-primary">
+                  ✦ Template NoSQL : {event.template.name}
+                </span>
+                {event.template.highlights.map((h, idx) => (
+                  <span key={idx} className="rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-foreground/80">
+                    ✓ {h}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {event.description && (
               <section className="mt-10">
                 <h2 className="font-display text-xl font-bold">À propos</h2>
                 <p className="mt-3 whitespace-pre-line leading-relaxed text-foreground/90">{event.description}</p>
+              </section>
+            )}
+
+            {event.template && event.template.sections && event.template.sections.length > 0 && (
+              <div className="mt-10 space-y-6">
+                {event.template.sections.map((sec, i) => (
+                  <section key={i} className="rounded-[16px] border border-border bg-card p-5">
+                    <h3 className="font-display text-lg font-bold text-foreground flex items-center gap-2">
+                      <span className="flex size-7 items-center justify-center rounded-lg bg-primary/15 text-primary text-xs">◈</span>
+                      {sec.title}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">{sec.content}</p>
+                  </section>
+                ))}
+              </div>
+            )}
+
+            {event.template && event.template.faq && event.template.faq.length > 0 && (
+              <section className="mt-10">
+                <h2 className="font-display text-xl font-bold flex items-center gap-2">
+                  <span>Questions fréquentes (FAQ)</span>
+                  <span className="text-xs font-mono font-normal text-muted-foreground">Document MongoDB</span>
+                </h2>
+                <div className="mt-4 space-y-3">
+                  {event.template.faq.map((item, idx) => (
+                    <div key={idx} className="rounded-[12px] border border-border bg-card/50 p-4">
+                      <h4 className="text-sm font-semibold text-foreground">{item.question}</h4>
+                      <p className="mt-1.5 text-sm text-muted-foreground">{item.answer}</p>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
 

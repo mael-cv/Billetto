@@ -18,6 +18,23 @@ services:
       timeout: 5s
       retries: 20
 
+  mongodb:
+    image: mongo:7.0-jammy
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-billetto_mongo}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-billetto_mongo_pass}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-billetto_templates}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   # SMTP de développement : capture tous les e-mails (interface web :8025).
   mailpit:
     image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
@@ -42,18 +59,41 @@ services:
       postgres:
         condition: service_healthy
 
+  # Initialisation automatique au lancement : vérifie/applique migrations SQL, seeds PostgreSQL et templates MongoDB
+  init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: init
+    image: ${INIT_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-init:latest}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-billetto_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      POSTGRES_DB: ${POSTGRES_DB:-billetto}
+      PGHOST: postgres
+      PGPORT: 5432
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD manquant}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-Billetto-Demo-2026!}
+      SEED: ${SEED:-20260916}
+      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_templates}?authSource=admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
       target: api
+    image: ${API_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-api:latest}
     environment:
       # Compose est le profil de développement local (HTTP localhost).
-      # En production, surcharger explicitement NODE_ENV/CORS_ORIGIN via l'orchestrateur.
       NODE_ENV: ${NODE_ENV:-development}
       API_PORT: 3001
-      # Compte restreint (rôles + RLS) : jamais le propriétaire du schéma.
       APP_DATABASE_URL: postgresql://billetto_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD manquant}@postgres:5432/${POSTGRES_DB:-billetto}
+      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_templates}?authSource=admin
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant}
       PAYMENTS_WEBHOOK_SECRET: ${PAYMENTS_WEBHOOK_SECRET:?PAYMENTS_WEBHOOK_SECRET manquant}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-7200}
@@ -65,7 +105,11 @@ services:
     ports:
       - "3001:3001"
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/v1/health || exit 1"]
@@ -78,6 +122,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: web
+    image: ${WEB_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-web:latest}
     ports:
       - "3000:8080"
     depends_on:
@@ -86,3 +131,4 @@ services:
 volumes:
   pg_data:
   pgadmin_data:
+  mongo_data:

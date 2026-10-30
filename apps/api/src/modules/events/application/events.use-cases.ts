@@ -8,6 +8,7 @@ import { type Page, toPage } from '../../../common/pagination';
 import type { Pagination } from '../../../common/validation/schemas';
 import type { EventDetail, EventFilters, EventInput, EventSummary } from '../domain/event';
 import { EVENTS_REPOSITORY, type EventsRepository } from '../domain/events.repository';
+import { TemplatesService } from '../../templates/templates.service';
 
 export type CatalogScope = 'public' | 'manage';
 
@@ -44,13 +45,15 @@ export class GetEventUseCase {
   constructor(
     private readonly db: DbContextService,
     @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
+    private readonly templates: TemplatesService,
   ) {}
 
   async execute(actor: Actor | null, scope: CatalogScope, ref: { id: number } | { slug: string }): Promise<EventDetail> {
     const event = await this.db.run(catalogActor(actor, scope), (tx) => this.events.findByRef(tx, ref));
     // Invisible (RLS) et inexistant sont indistinguables : 404 dans les deux cas.
     if (!event) throw notFound('Événement');
-    return event;
+    const template = await this.templates.resolveEventTemplate(event.type.nom, event.nom);
+    return { ...event, template };
   }
 }
 

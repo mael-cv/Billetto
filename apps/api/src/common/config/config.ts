@@ -10,6 +10,10 @@ export const configSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   // Compte restreint billetto_app : l'API ne se connecte jamais en propriétaire.
   APP_DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'URL PostgreSQL attendue'),
+  MONGO_URL: z
+    .string()
+    .regex(/^mongodb(\+srv)?:\/\//, 'URL MongoDB attendue')
+    .default('mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_templates?authSource=admin'),
   JWT_SECRET: z.string().min(32, 'au moins 32 caractères'),
   // Facultatif en développement sans prestataire ; requis pour accepter un webhook.
   PAYMENTS_WEBHOOK_SECRET: z.preprocess(

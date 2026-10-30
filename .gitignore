@@ -37,3 +37,6 @@ logs/
 
 # Rapports générés par security-audit (artefacts régénérés à chaque run)
 doc/security-audit/
+
+# Consignes du cours (PDF non versionnés)
+/*.pdf

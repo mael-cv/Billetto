@@ -1,4 +1,4 @@
-﻿# Billetto
+# Billetto
 
 https://canva.link/6j4o04nwduhqlv1
 
@@ -6,43 +6,63 @@ Billetterie événementielle full-stack construite autour d'un cours de SQL avan
 PostgreSQL calcule, contrôle et protège ; l'API et le front restent fins.
 
 - **Front** : React 19 / TypeScript / Vite / Tailwind (conçu avec Figma Make) — `apps/web`
-- **API** : NestJS + Fastify, Prisma — `apps/api`
-- **Base** : PostgreSQL 17, SQL versionné — `database/`
-- **Outils** : Docker Compose, pgAdmin
+- **API** : NestJS + Fastify, Prisma & Driver MongoDB — `apps/api`
+- **Base SQL (Relationnelle)** : PostgreSQL 17, SQL versionné (données transactionnelles, RLS, quotas) — `database/`
+- **Base NoSQL (Documentaire)** : MongoDB 7.0 (templates visuels et structurels des événements et des billets)
+- **Outils** : Docker Compose, pgAdmin, Mailpit
 
-> Avancement : voir [doc/phases](doc/phases/README.md). Phases 01 (bootstrap, schéma, seed), 02 (SQL avancé, vues), 03 (index, EXPLAIN), 04 (fonctions, triggers), 05 (rôles, GRANT, RLS), 06 (API NestJS) et 07 (Front React et intégration complète) livrées.
+> **Architecture hybride SQL / NoSQL** : PostgreSQL stocke les données critiques (tarifs, stocks, réservations, utilisateurs, paiements, check-in) ; MongoDB stocke les documents de templates (thèmes, couleurs, sections, FAQ, instructions de sécurité, filigranes des billets). L'API fusionne le template NoSQL avec les données en temps réel issues du SQL.
 
-## Prérequis
-- Docker Desktop
-- Node.js 22 et pnpm 10 (voir `.mise.toml`)
+## Démarrage rapide (Tout automatisé via Docker Compose)
 
-## Démarrage
+Le conteneur `init` vérifie automatiquement l'état des bases au lancement : il applique les migrations SQL, peuple PostgreSQL (`seed:small` + `seed:demo`) et injecte les templates NoSQL dans MongoDB si les bases sont neuves, puis démarre l'API et le Web :
 
 ```bash
-cp .env.example .env              # puis changer les mots de passe
-docker compose up -d --wait postgres pgadmin
+docker compose up -d
+```
+
+### Démarrage en développement local (sans conteneurs applicatifs)
+
+```bash
+cp .env.example .env              # puis adapter les mots de passe si nécessaire
+docker compose up -d --wait postgres mongodb mailpit pgadmin
 pnpm install
-pnpm db:migrate
-pnpm db:seed:small
-pnpm dev                          # web :3000 + api :3001
+pnpm db:init                      # vérifie et applique migrations, seeds SQL et MongoDB
+pnpm dev                          # Web :3000 + API :3001
 ```
 
-Seed volumineux pour les benchmarks (1,8 M de billets) :
+## Rendu pour le professeur
 
+Pour rendre le projet, seuls deux fichiers sont requis :
+1. Le fichier `docker-compose.yml`
+2. Le fichier `.env` configuré avec votre `DOCKER_USER`
+
+Le professeur exécute simplement :
 ```bash
-pnpm db:seed:full
+docker compose up -d
 ```
+Docker Compose télécharge automatiquement toutes les images depuis Docker Hub, exécute l'initialisation automatique, puis met à disposition tous les services.
 
-Stack complète en conteneurs : `docker compose up -d --wait`. Compose utilise le profil local (`NODE_ENV=development`, site HTTP sur `localhost:3000`, cookies non-Secure). En production, définissez explicitement `NODE_ENV=production`, `CORS_ORIGIN=https://<domaine-du-frontend>` et `COOKIE_SECURE=true` derrière un reverse proxy TLS ; ne réutilisez pas les valeurs locales.
+### Publier vos images sur Docker Hub avant le rendu :
+- **Sous Windows (PowerShell) :**
+  ```powershell
+  ./scripts/publish-dockerhub.ps1 -DockerUser votre_pseudo_dockerhub
+  ```
+- **Sous Linux / macOS :**
+  ```bash
+  ./scripts/publish-dockerhub.sh votre_pseudo_dockerhub
+  ```
 
 ## Services
 
-| Service    | URL                          |
-|------------|------------------------------|
-| Web        | http://localhost:3000        |
-| API        | http://localhost:3001/api/v1 |
-| pgAdmin    | http://localhost:8080        |
-| PostgreSQL | localhost:5433               |
+| Service       | URL                          | Rôle |
+|---------------|------------------------------|------|
+| **Web**       | http://localhost:3000        | Interface React 19 / Tailwind |
+| **API**       | http://localhost:3001/api/v1 | Backend NestJS (PostgreSQL + MongoDB) |
+| **Mailpit**   | http://localhost:8025        | Boîte SMTP de développement |
+| **pgAdmin**   | http://localhost:8080        | Administration PostgreSQL |
+| **PostgreSQL**| localhost:5433               | Base SQL relationnelle 3NF |
+| **MongoDB**   | localhost:27017              | Base NoSQL documents (templates) |
 
 Le port hôte PostgreSQL est 5433 pour ne pas entrer en conflit avec une installation locale (modifiable via `POSTGRES_PORT`).
 Dans pgAdmin, le serveur « Billetto (lecture seule) » est préconfiguré avec le compte `billetto_bi` (lecture seule, sans données personnelles) ; le mot de passe est celui de `READONLY_DB_PASSWORD`, posé par `pnpm db:migrate`. Pour administrer la base, ajouter manuellement une connexion `billetto_owner` (`POSTGRES_PASSWORD`).

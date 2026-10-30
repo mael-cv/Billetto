@@ -14,6 +14,36 @@ export function psql(args, { settings = {}, input, capture = false } = {}) {
   const pgOptions = Object.entries(settings)
     .map(([k, v]) => `-c ${k}=${v}`)
     .join(' ');
+
+  // Si PGHOST est défini (par ex. dans un conteneur docker ou environnement avec psql direct),
+  // on utilise directement le binaire psql sans passer par 'docker compose exec'.
+  if (process.env.PGHOST) {
+    const directCmd = [
+      '-h', process.env.PGHOST,
+      '-p', process.env.PGPORT || '5432',
+      '-U', process.env.POSTGRES_USER || 'billetto_owner',
+      '-d', process.env.POSTGRES_DB || 'billetto',
+      '-v', 'ON_ERROR_STOP=1',
+      '-X', '-q',
+      ...args,
+    ];
+    const env = {
+      ...process.env,
+      PGPASSWORD: process.env.POSTGRES_PASSWORD,
+      ...(pgOptions ? { PGOPTIONS: pgOptions } : {}),
+    };
+    const res = spawnSync('psql', directCmd, {
+      input,
+      env,
+      encoding: 'utf-8',
+      stdio: [input === undefined ? 'inherit' : 'pipe', capture ? 'pipe' : 'inherit', 'inherit'],
+    });
+    if (res.status !== 0) {
+      throw new Error(`psql direct a échoué (code ${res.status})`);
+    }
+    return res.stdout ?? '';
+  }
+
   const cmd = [
     'compose', 'exec', '-T',
     ...(pgOptions ? ['-e', `PGOPTIONS=${pgOptions}`] : []),

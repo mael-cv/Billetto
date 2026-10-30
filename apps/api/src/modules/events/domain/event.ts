@@ -1,3 +1,5 @@
+import type { EventTemplateDocument } from '../../../common/mongodb/templates.types';
+
 export type EventStatus = 'draft' | 'published' | 'cancelled' | 'finished';
 
 export interface EventSummary {
@@ -36,6 +38,8 @@ export interface EventDetail extends Omit<EventSummary, 'lieu' | 'prixMin'> {
   tarifs: TicketPrice[];
   /** Annulation self-service possible jusqu'à debut - delaiAnnulationHeures. */
   delaiAnnulationHeures: number;
+  /** Template immersif NoSQL (MongoDB) */
+  template?: EventTemplateDocument;
 }
 
 /** Une ligne de l'export participants (un billet). */

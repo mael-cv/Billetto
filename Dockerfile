@@ -1,8 +1,8 @@
 # Images de base épinglées par digest (reproductibilité / supply chain) ;
 # Dependabot (écosystème docker) propose les mises à jour.
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
-# OpenSSL requis par le moteur Prisma sur Alpine.
-RUN apk add --no-cache openssl && corepack enable
+# OpenSSL requis par Prisma et postgresql-client pour exécuter les migrations psql.
+RUN apk add --no-cache openssl postgresql-client && corepack enable
 WORKDIR /repo
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/
@@ -10,6 +10,12 @@ COPY apps/web/package.json apps/web/
 COPY database/package.json database/
 RUN pnpm install --frozen-lockfile
 COPY . .
+RUN ln -sf /repo/database /database
+
+# Conteneur d'initialisation automatique (vérifie migrations SQL + seed PostgreSQL + templates MongoDB)
+FROM deps AS init
+WORKDIR /repo
+CMD ["node", "database/scripts/init-auto.mjs"]
 
 FROM deps AS api-build
 RUN pnpm --filter @billetto/api prisma:generate && pnpm --filter @billetto/api build

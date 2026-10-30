@@ -50,6 +50,52 @@ export interface TicketPrice {
   actif: boolean;
 }
 
+export interface EventTemplateTheme {
+  primaryColor: string;
+  accentColor: string;
+  badgeText: string;
+  heroLayout: 'festival' | 'concert' | 'conference' | 'theatre' | 'standard';
+  bannerGradient: string;
+}
+
+export interface EventTemplateSection {
+  title: string;
+  icon?: string;
+  content: string;
+}
+
+export interface EventTemplate {
+  templateId: string;
+  name: string;
+  description?: string;
+  theme: EventTemplateTheme;
+  highlights: string[];
+  sections: EventTemplateSection[];
+  faq: Array<{ question: string; answer: string }>;
+  ticketTemplateId: string;
+}
+
+export interface TicketTemplateStyle {
+  cardBg: string;
+  cardTextColor: string;
+  borderColor: string;
+  accentColor: string;
+  badgeBg: string;
+  badgeTextColor: string;
+  watermarkOpacity: number;
+}
+
+export interface TicketTemplate {
+  templateId: string;
+  name: string;
+  headerTitle: string;
+  securityWatermark: string;
+  instructions: string;
+  terms: string;
+  style: TicketTemplateStyle;
+  badges: string[];
+}
+
 export interface EventDetail {
   id: number;
   slug: string;
@@ -68,6 +114,8 @@ export interface EventDetail {
   fuseauHoraire: string;
   /** Annulation self-service possible jusqu'à debut - delaiAnnulationHeures. */
   delaiAnnulationHeures: number;
+  /** Template visuel et structurel NoSQL (MongoDB) */
+  template?: EventTemplate;
 }
 
 export interface EventTypeNode {
@@ -126,6 +174,8 @@ export interface MyTicket extends OrderTicket {
   qrPayload: string;
   /** Annulation self-service possible jusqu'à cette date (délai configurable par événement). */
   annulationPossibleJusqua: string | null;
+  /** Template visuel NoSQL (MongoDB) */
+  template?: TicketTemplate;
 }
 
 export interface OrderSummary {

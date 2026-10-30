@@ -70,18 +70,55 @@ const STATE_BADGE: Record<TicketState, [tone: "success" | "muted" | "danger" | "
 function TicketCard({ t, onRefund, refunding }: { t: MyTicket; onRefund: () => void; refunding: boolean }) {
   const state = stateOf(t);
   const [tone, label] = STATE_BADGE[state];
+  const tpl = t.template;
+
   return (
-    <Card className="animate-fade-up overflow-hidden">
+    <Card
+      className="animate-fade-up overflow-hidden transition-all border"
+      style={
+        tpl
+          ? {
+              borderColor: tpl.style.borderColor || undefined,
+            }
+          : undefined
+      }
+    >
+      {tpl && (
+        <div
+          className="flex items-center justify-between px-4 py-1.5 text-[11px] font-mono tracking-wider font-semibold border-b"
+          style={{
+            backgroundColor: tpl.style.badgeBg || "rgba(255,255,255,0.05)",
+            color: tpl.style.badgeTextColor || "inherit",
+            borderColor: tpl.style.borderColor || "var(--border)",
+          }}
+        >
+          <span>{tpl.headerTitle}</span>
+          <span className="opacity-80">NoSQL Template : {tpl.templateId}</span>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row">
         <div className="relative h-32 w-full bg-elevated sm:h-auto sm:w-40">
           <img src={eventImage({ id: t.evenementId, type: { nom: "" } }, 400, 300)} alt="" className="size-full object-cover" />
         </div>
-        <div className="flex flex-1 items-center gap-4 p-4">
+        <div className="flex flex-1 items-center gap-4 p-4 relative">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={tone}>{label}</Badge>
               <span className="font-mono text-xs text-muted-foreground">{t.tarif}</span>
               <span className="font-mono text-xs text-muted-foreground">Commande n° {t.commandeId}</span>
+              {tpl &&
+                tpl.badges.map((b, idx) => (
+                  <span
+                    key={idx}
+                    className="rounded px-2 py-0.5 text-[10px] font-mono font-bold tracking-wide uppercase"
+                    style={{
+                      backgroundColor: tpl.style.badgeBg,
+                      color: tpl.style.badgeTextColor,
+                    }}
+                  >
+                    {b}
+                  </span>
+                ))}
             </div>
             <h3 className="mt-2 font-display text-lg font-semibold leading-tight">{t.evenement}</h3>
             <div className="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -92,12 +129,25 @@ function TicketCard({ t, onRefund, refunding }: { t: MyTicket; onRefund: () => v
                 <IconPin className="size-4" /> {t.lieu}, {t.ville}
               </div>
             </div>
-            <div className="mt-3 font-mono text-xs text-muted-foreground">{t.code}</div>
+            <div className="mt-3 flex items-center gap-3">
+              <span className="font-mono text-xs text-muted-foreground bg-elevated px-2 py-1 rounded">Code: {t.code}</span>
+              <span className="font-display font-semibold text-xs text-foreground/90">Payé: {t.prixPaye} €</span>
+            </div>
+            {tpl && tpl.instructions && (
+              <p className="mt-2 text-[11px] text-muted-foreground italic leading-tight">
+                ℹ {tpl.instructions}
+              </p>
+            )}
             {state === "valide" && <CancelAction t={t} onRefund={onRefund} refunding={refunding} />}
           </div>
           {state === "valide" && <TicketQr payload={t.qrPayload} code={t.code} />}
         </div>
       </div>
+      {tpl && (
+        <div className="bg-elevated/40 px-4 py-1 border-t border-border/50 text-[10px] font-mono text-muted-foreground/60 tracking-widest text-center uppercase select-none">
+          {tpl.securityWatermark}
+        </div>
+      )}
     </Card>
   );
 }
