@@ -30,13 +30,15 @@ logs/
 
 !.env.example
 
-# Instructions agents (non versionnées). La documentation doc/ est versionnée.
+# Instructions agents (non versionnées). La documentation doc/ et docs/ est versionnée.
 /CLAUDE.md
 /AGENTS.md
-/docs/
 
 # Rapports générés par security-audit (artefacts régénérés à chaque run)
 doc/security-audit/
 
 # Consignes du cours (PDF non versionnés)
 /*.pdf
+
+# Note de conception initiale (brouillon, non livrée)
+/docs/IMPLEMENT.md

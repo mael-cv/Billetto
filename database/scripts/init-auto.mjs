@@ -9,6 +9,9 @@ const started = Date.now();
 console.log('====================================================');
 console.log('🚀 BILLETTO — Vérification de l\'initialisation');
 console.log('====================================================');
+if ((process.env.POSTGRES_PASSWORD ?? '') === 'billetto_owner_pass') {
+  console.warn('⚠️  Secrets PAR DÉFAUT de docker-compose.yml en usage : réservés à la démonstration. Créez un .env (voir .env.example) pour tout autre usage.');
+}
 
 // 1. Attente active de PostgreSQL
 console.log('» 1/4 Attente de la base PostgreSQL...');
