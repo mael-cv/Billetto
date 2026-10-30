@@ -123,7 +123,7 @@ describe('e-mails : job outbox', () => {
     });
     expect(await job.tick()).toBe(0);
     expect(marks).toEqual([[5, false, 'Error: ECONNREFUSED']]);
-  });
+  }, 30_000); // génération des PNG de QR avant l'envoi : lent sous charge (comme le test précédent)
 
   it('sans transport (SMTP_URL absent) : aucun envoi', async () => {
     const outbox: EmailOutboxRepository = { claim: jest.fn(), mark: jest.fn() };

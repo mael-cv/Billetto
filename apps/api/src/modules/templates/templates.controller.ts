@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { OptionalAuth } from '../../auth/presentation/auth.decorators';
 import { TemplatesService } from './templates.service';
 
@@ -28,11 +28,5 @@ export class TemplatesController {
   @OptionalAuth()
   getTicket(@Param('id') id: string) {
     return this.templates.getTicketTemplate(id);
-  }
-
-  @Post('seed')
-  @OptionalAuth()
-  seed() {
-    return this.templates.seedDefaultTemplatesIfEmpty();
   }
 }

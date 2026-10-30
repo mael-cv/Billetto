@@ -88,14 +88,15 @@ jobs:
             -e "s|^SMTP_URL=.*|SMTP_URL=|" \
             .env
 
-      - name: PostgreSQL
-        run: docker compose up -d --wait postgres
+      - name: PostgreSQL, MongoDB et Mailpit
+        run: docker compose up -d --wait postgres mongodb mailpit
 
       - name: Migrations et données
         run: |
           pnpm db:migrate
           pnpm db:seed:small
           pnpm db:seed:demo
+          pnpm db:init
 
       - name: Tests SQL, concurrence et isolation RLS
         run: pnpm db:test
