@@ -118,7 +118,7 @@ pnpm dev                                                 # web :3000 + api :3001
 | `pnpm db:seed:full` | jeu de données volumineux (1,8 M billets) |
 | `./scripts/backup.sh`, `./scripts/restore.sh <dossier>` | sauvegarde / restauration des deux bases (voir `docs/presentation.md` §8) |
 
-Documentation détaillée : [base de données](doc/database.md) · [performance](doc/performance.md) · [sécurité](doc/security.md) · [autorisation et RBAC](doc/authorization-rbac.md) · [décisions](doc/decisions.md) · [phases du projet](doc/phases/README.md).
+Documentation détaillée : [base de données](doc/database.md) · [performance](doc/performance.md) · [décisions](doc/decisions.md).
 
 ## Sécurité et secrets
 

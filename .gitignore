@@ -49,3 +49,6 @@ apps/web/playwright-report/
 
 # Sauvegardes locales (scripts/backup.sh)
 backups/
+
+# Notes de tournage (non livrées)
+/video.md

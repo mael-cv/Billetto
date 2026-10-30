@@ -43,7 +43,7 @@ Plutôt qu'un type `ENUM` : ajouter une valeur à un `CHECK` est une migration s
 - Les comptes seedés ont un hash invalide (`!seed-no-login`) : pas de connexion possible. Les comptes de démonstration arrivent en phase 06.
 
 ## D10 — Documentation dans `doc/`
-Un seul dossier de documentation, `doc/`, avec `doc/phases/` (un fichier par phase : objectifs, spécifications, critères d'acceptation).
+Documentation technique dans `doc/` (base, performance, API, décisions) ; document de présentation et schémas dans `docs/`.
 
 ## D11 — Erreurs métier en SQLSTATE `BTxxx`
 Les fonctions lèvent des codes dédiés (`BT001`…`BT020`, liste dans `database.md`). La classe `BT` n'est pas utilisée par PostgreSQL. L'API mappe le code vers un statut HTTP sans analyser le texte, qui peut évoluer.

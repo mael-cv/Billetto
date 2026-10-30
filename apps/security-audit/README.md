@@ -27,7 +27,7 @@ pnpm --filter @billetto/security-audit test
 
 Rapports générés dans `doc/security-audit/` : `security-report.{json,md,html}`.
 
-Documentation complète : [`doc/security-audit.md`](../../doc/security-audit.md).
+Outil annexe au projet (bonus tests automatisés) ; voir `security-audit.yaml` pour la configuration.
 
 Sûreté : cible restreinte à `localhost`/`127.0.0.1`/`::1` (configurable), requêtes bornées, pas de
 DoS, pas de payload destructif, comptes de démo uniquement. Voir `security-audit.yaml`.

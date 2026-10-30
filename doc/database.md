@@ -269,7 +269,7 @@ L'API s'appuie sur le code, jamais sur le texte du message.
 Soit environ +30 à +50 % : une recherche `tarifs → evenements` par ligne insérée, en plus des 3 triggers internes de clés étrangères (`calls=200000` chacun dans le plan). Négligeable pour un achat (1 à 10 billets), sensible pour un chargement massif : le seed FULL passe de 11–12 min (phase 01, sans index ni trigger) à 15,5 min (6 index sur `billets` + trigger). Pour un import ponctuel : désactiver le trigger (`ALTER TABLE … DISABLE TRIGGER`, droits de propriétaire) après une validation ensembliste préalable.
 
 ## Réservations, liste d'attente, check-in, dashboard, e-mails (007 – 013)
-Le détail de chaque phase est dans [phases/](phases/README.md). Les principes communs :
+Les principes communs :
 
 - **Un seul verrou, une seule règle de quota.** Achat direct (`acheter_billet`), hold (`creer_reservation`) et offre de liste d'attente (`notifier_prochain_en_attente`) prennent tous `FOR UPDATE` sur la ligne du tarif, puis comptent avec `places_occupees()`. Une réservation compte tant que `expire_a > now()` : l'expiration est **lazy**, elle ne dépend d'aucun job. La purge (`purger_reservations_expirees`) ne fait que du reporting.
 - **Liste d'attente** : une offre est une réservation à TTL court, donc bloquée par la même règle et confirmée par `confirmer_reservation`. Le **déclencheur canonique unique** est `traiter_liste_attente(tarif)`. Il est idempotent : il recalcule tout sous verrou, ce qui empêche une double offre pour une même place. Il est appelé par les triggers de désistement et par un balayage périodique, qui rattrape les expirations lazy. L'ordre est FIFO strict (`ORDER BY created_at, id … FOR UPDATE SKIP LOCKED`).
