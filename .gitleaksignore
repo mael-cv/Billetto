@@ -6,3 +6,6 @@
 
 # JWT « alg: none » forgé par un test e2e (rejet attendu en 401) ; aucun secret réel.
 66f67f3e2650d1ed09ec3b7bc1283990bcc18e2a:apps/api/test/api.e2e-spec.ts:jwt:181
+
+# Même nonce RFC 6455, commit de la branche feat/pentest fusionnée dans master.
+cea356d71298656354e36e02cb4696a51596beca:apps/security-audit/src/pentest/websockets.ts:generic-api-key:23
