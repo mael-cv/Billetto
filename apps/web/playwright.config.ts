@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// WEB_PORT : port du front pendant les tests (3000 par défaut) ; utile si 3000 est déjà pris.
+const WEB_PORT = process.env.WEB_PORT ?? "3000";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
@@ -10,7 +13,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: `http://localhost:${WEB_PORT}`,
     trace: "on-first-retry",
   },
   projects: [
@@ -28,8 +31,8 @@ export default defineConfig({
       timeout: 20_000,
     },
     {
-      command: "pnpm --filter @billetto/web dev",
-      url: "http://localhost:3000",
+      command: `pnpm --filter @billetto/web exec vite --port ${WEB_PORT}`,
+      url: `http://localhost:${WEB_PORT}`,
       reuseExistingServer: true,
       cwd: "../..",
       timeout: 20_000,

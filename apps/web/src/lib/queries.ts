@@ -16,6 +16,12 @@ export const keys = {
   order: (id: number) => ["order", id] as const,
   analytics: (name: string, ...args: unknown[]) => ["analytics", name, ...args] as const,
   users: (q: string, page: number) => ["users", q, page] as const,
+  // Base documentaire MongoDB
+  eventPage: (ref: string | number, scope: Scope) => ["event-page", String(ref), scope] as const,
+  reviews: (ref: string | number, page: number) => ["reviews", String(ref), page] as const,
+  organizerReviews: (sansReponse: boolean, page: number) => ["organizer-reviews", sansReponse, page] as const,
+  trending: (jours: number) => ["trending", jours] as const,
+  eventActivity: (id: number, granularite: string) => ["event-activity", id, granularite] as const,
 };
 
 export const useEventTypes = () =>
@@ -35,3 +41,13 @@ export function useRootTypes() {
 // Polling : une offre de liste d'attente n'est « notifiée » que par son statut.
 export const useMyWaitlist = (enabled: boolean) =>
   useQuery({ queryKey: keys.myWaitlist, queryFn: api.myWaitlist, enabled, refetchInterval: 30_000 });
+
+/** Événements tendance : classement MongoDB croisé avec le catalogue PostgreSQL. */
+export const useTrending = (jours = 7, limit = 8) =>
+  useQuery({ queryKey: keys.trending(jours), queryFn: () => api.trending(jours, limit), staleTime: 60_000 });
+
+export const useEventPage = (ref: string | number, scope: Scope = "public") =>
+  useQuery({ queryKey: keys.eventPage(ref, scope), queryFn: () => api.eventPage(ref, scope) });
+
+export const useReviews = (ref: string | number, page = 1) =>
+  useQuery({ queryKey: keys.reviews(ref, page), queryFn: () => api.reviews(ref, page), placeholderData: (prev) => prev });

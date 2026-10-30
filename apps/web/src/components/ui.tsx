@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { useRouter } from "../lib/router";
 
 // ---------- Link ----------
@@ -105,8 +105,12 @@ export function Badge({
 }
 
 // ---------- Card ----------
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-[16px] border border-border bg-card ${className}`}>{children}</div>;
+export function Card({ children, className = "", style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+  return (
+    <div className={`rounded-[16px] border border-border bg-card ${className}`} style={style}>
+      {children}
+    </div>
+  );
 }
 
 // ---------- Field ----------

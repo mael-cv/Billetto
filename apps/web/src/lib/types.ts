@@ -330,3 +330,165 @@ export interface LiveDashboard {
   totaux: { places: number; vendus: number; reserves: number; enAttente: number; chiffreAffaires: string };
   evenements: LiveEvent[];
 }
+
+// --- Base documentaire MongoDB (pages, avis, activités) ---
+
+export interface ProgrammeItem {
+  heure: string;
+  scene?: string;
+  titre: string;
+  artiste?: string;
+  dureeMin?: number;
+}
+
+export interface MediaItem {
+  type: "image" | "video" | "audio";
+  url: string;
+  legende?: string;
+}
+
+export interface EventPageInput {
+  templateId: string;
+  tags: string[];
+  programme: ProgrammeItem[];
+  medias: MediaItem[];
+  sections: EventTemplateSection[];
+  faq: Array<{ question: string; answer: string }>;
+}
+
+export interface EventPage extends EventPageInput {
+  evenementId: number;
+  slug: string;
+  updatedAt: string;
+}
+
+/** GET /events/:ref/page : événement SQL + page Mongo + template. */
+export interface EventPageView {
+  evenement: EventDetail;
+  page: EventPage;
+  template: EventTemplate;
+  personnalisee: boolean;
+}
+
+export interface Review {
+  id: string;
+  evenementId: number;
+  utilisateurId: number;
+  prenom: string;
+  note: number;
+  titre?: string;
+  commentaire: string;
+  utile: number;
+  reponseOrganisateur?: { texte: string; date: string };
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReviewStats {
+  nbAvis: number;
+  moyenne: number | null;
+  distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
+  tauxReponse: number;
+}
+
+export interface ReviewList extends Page<Review> {
+  stats: ReviewStats;
+}
+
+export interface TrendingItem {
+  evenementId: number;
+  score: number;
+  vues: number;
+  achats: number;
+  scans: number;
+  visiteursDistincts: number;
+  evenement: EventSummary;
+}
+
+export interface ActivityBucket {
+  periode: string;
+  total: number;
+  parType: Partial<Record<"vue_evenement" | "recherche" | "scan_checkin" | "connexion" | "achat", number>>;
+}
+
+// --- Base documentaire MongoDB (pages, avis, activités) ---
+
+export interface ProgrammeItem {
+  heure: string;
+  scene?: string;
+  titre: string;
+  artiste?: string;
+  dureeMin?: number;
+}
+
+export interface MediaItem {
+  type: "image" | "video" | "audio";
+  url: string;
+  legende?: string;
+}
+
+export interface EventPageInput {
+  templateId: string;
+  tags: string[];
+  programme: ProgrammeItem[];
+  medias: MediaItem[];
+  sections: EventTemplateSection[];
+  faq: Array<{ question: string; answer: string }>;
+}
+
+export interface EventPage extends EventPageInput {
+  evenementId: number;
+  slug: string;
+  updatedAt: string;
+}
+
+/** GET /events/:ref/page : événement SQL + page Mongo + template. */
+export interface EventPageView {
+  evenement: EventDetail;
+  page: EventPage;
+  template: EventTemplate;
+  personnalisee: boolean;
+}
+
+export interface Review {
+  id: string;
+  evenementId: number;
+  utilisateurId: number;
+  prenom: string;
+  note: number;
+  titre?: string;
+  commentaire: string;
+  utile: number;
+  reponseOrganisateur?: { texte: string; date: string };
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReviewStats {
+  nbAvis: number;
+  moyenne: number | null;
+  distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
+  tauxReponse: number;
+}
+
+export interface ReviewList extends Page<Review> {
+  stats: ReviewStats;
+}
+
+export interface TrendingItem {
+  evenementId: number;
+  score: number;
+  vues: number;
+  achats: number;
+  scans: number;
+  visiteursDistincts: number;
+  evenement: EventSummary;
+}
+
+export type ActivityType = "vue_evenement" | "recherche" | "scan_checkin" | "connexion" | "achat";
+
+export interface ActivityBucket {
+  periode: string;
+  total: number;
+  parType: Partial<Record<ActivityType, number>>;
+}

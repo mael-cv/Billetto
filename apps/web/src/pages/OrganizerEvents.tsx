@@ -155,6 +155,9 @@ export function OrganizerEventsPage() {
                             <Button variant="ghost" size="sm" onClick={() => navigate(`/events/${e.slug}?scope=manage`)}>
                               Voir
                             </Button>
+                            <Button variant="ghost" size="sm" title="Page éditoriale (MongoDB)" onClick={() => navigate(`/organizer/events/${e.id}/page`)}>
+                              Page
+                            </Button>
                             {e.statut === "published" && (
                               <Button
                                 variant="ghost"

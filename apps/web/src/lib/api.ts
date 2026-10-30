@@ -31,6 +31,14 @@ import type {
   ScanOutcome,
   WaitlistEntry,
   WaitlistQueueItem,
+  ActivityBucket,
+  EventPage,
+  EventPageInput,
+  EventPageView,
+  EventTemplate,
+  Review,
+  ReviewList,
+  TrendingItem,
 } from "./types";
 
 export type EventSort = "date" | "-date" | "prix" | "nom";
@@ -139,6 +147,33 @@ export const api = {
   dailySales: (from: string, to: string) => http<DailySales[]>("GET", "/analytics/daily-sales", { query: { from, to } }),
   recentOrders: (limit = 10) => http<RecentOrder[]>("GET", "/analytics/recent-orders", { query: { limit } }),
   priceAudit: (limit = 50) => http<PriceAuditEntry[]>("GET", "/analytics/price-audit", { query: { limit } }),
+
+  // Base documentaire MongoDB : pages éditoriales, avis, journal d'activité (voir doc/api.md)
+  eventPage: (ref: string | number, scope: Scope = "public") =>
+    http<EventPageView>("GET", `/events/${encodeURIComponent(String(ref))}/page`, { query: { scope } }),
+  saveEventPage: (id: number, body: EventPageInput) => http<EventPage>("PUT", `/events/${id}/page`, { body }),
+  deleteEventPage: (id: number) => http<void>("DELETE", `/events/${id}/page`),
+  reviews: (ref: string | number, page = 1, noteMin?: number) =>
+    http<ReviewList>("GET", `/events/${encodeURIComponent(String(ref))}/avis`, { query: { page, pageSize: 10, noteMin } }),
+  postReview: (evenementId: number, body: { note: number; titre?: string; commentaire: string }) =>
+    http<Review>("POST", `/events/${evenementId}/avis`, { body }),
+  updateReview: (id: string, body: { note?: number; titre?: string; commentaire?: string }) =>
+    http<Review>("PATCH", `/avis/${id}`, { body }),
+  deleteReview: (id: string) => http<void>("DELETE", `/avis/${id}`),
+  replyReview: (id: string, texte: string) => http<Review>("POST", `/avis/${id}/reponse`, { body: { texte } }),
+  organizerReviews: (sansReponse: boolean, page = 1) =>
+    http<Page<Review & { evenement: string }>>("GET", "/organizer/avis", {
+      query: { sansReponse: sansReponse ? "true" : undefined, page, pageSize: 20 },
+    }),
+  trending: (jours = 7, limit = 8) => http<TrendingItem[]>("GET", "/events/tendances", { query: { jours, limit } }),
+  eventTemplates: () => http<EventTemplate[]>("GET", "/templates/events"),
+  recordActivity: (body: {
+    type: "vue_evenement" | "recherche";
+    evenementId?: number;
+    payload?: Record<string, string | number | boolean>;
+  }) => http<{ id: string }>("POST", "/activites", { body }),
+  eventActivity: (evenementId: number, granularite: "heure" | "jour" = "jour", jours = 14) =>
+    http<ActivityBucket[]>("GET", `/activites/evenements/${evenementId}`, { query: { granularite, jours } }),
 
   // Administration
   users: (q?: string, page = 1) => http<Page<AdminUser>>("GET", "/users", { query: { q, page, pageSize: 25 } }),

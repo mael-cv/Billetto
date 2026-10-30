@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useCities, useEvents, useRootTypes } from "../lib/queries";
+import { useCities, useEvents, useRootTypes, useTrending } from "../lib/queries";
 import { startOfToday } from "../lib/hooks";
 import { formatDate, formatNumber } from "../lib/format";
 import { eventImage } from "../lib/presentation";
@@ -166,6 +166,7 @@ function FeaturedBanner({ event }: { event: EventSummary }) {
 export function HomePage() {
   const upcoming = useEvents({ from: TODAY, sort: "date", pageSize: 5 });
   const cheap = useEvents({ from: TODAY, sort: "prix", pageSize: 4 });
+  const trending = useTrending(7, 4);
   const featured = upcoming.data?.items[4] ?? upcoming.data?.items[0];
 
   return (
@@ -182,6 +183,15 @@ export function HomePage() {
           onRetry={() => void upcoming.refetch()}
         />
         {featured && <FeaturedBanner event={featured} />}
+        <Row
+          title="Tendances"
+          subtitle="Les plus consultés et achetés ces 7 derniers jours (journal d'activité MongoDB)"
+          to="/events"
+          items={trending.data?.map((t) => t.evenement)}
+          loading={trending.isLoading}
+          error={trending.isError}
+          onRetry={() => void trending.refetch()}
+        />
         <Row
           title="Petits prix"
           subtitle="Les sorties les plus accessibles"

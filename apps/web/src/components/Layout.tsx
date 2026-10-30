@@ -177,7 +177,7 @@ export function Header() {
 export function Footer() {
   const groups = [
     { title: "Découvrir", links: [["Tous les événements", "/events"], ["Petits prix", "/events?sort=prix"], ["Événements passés", "/events?passes=1"]] },
-    { title: "Organisateurs", links: [["Tableau de bord", "/organizer"], ["Créer un événement", "/organizer/events/new"], ["Mes événements", "/organizer/events"], ["Ventes", "/organizer/sales"]] },
+    { title: "Organisateurs", links: [["Tableau de bord", "/organizer"], ["Créer un événement", "/organizer/events/new"], ["Mes événements", "/organizer/events"], ["Ventes", "/organizer/sales"], ["Avis", "/organizer/avis"]] },
     { title: "Compte", links: [["Connexion", "/login"], ["Créer un compte", "/register"], ["Mes billets", "/tickets"], ["Mon compte", "/account"]] },
   ];
   return (

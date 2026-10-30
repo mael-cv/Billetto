@@ -19,6 +19,8 @@ import { AccountPage } from "./pages/Account";
 import { OrganizerDashboardPage } from "./pages/OrganizerDashboard";
 import { OrganizerEventsPage, OrganizerSalesPage } from "./pages/OrganizerEvents";
 import { CreateEventPage } from "./pages/CreateEvent";
+import { OrganizerReviewsPage } from "./pages/OrganizerReviews";
+import { OrganizerEventPagePage } from "./pages/OrganizerEventPage";
 import { AdminPage } from "./pages/Admin";
 
 const queryClient = new QueryClient({
@@ -131,6 +133,19 @@ function Routes() {
     return (
       <RequireAuth roles={[...manage]}>
         <OrganizerSalesPage />
+      </RequireAuth>
+    );
+  if (clean === "/organizer/avis")
+    return (
+      <RequireAuth roles={[...manage]}>
+        <OrganizerReviewsPage />
+      </RequireAuth>
+    );
+  const pageMatch = matchRoute(clean, "/organizer/events/:id/page");
+  if (pageMatch)
+    return (
+      <RequireAuth roles={[...manage]}>
+        <OrganizerEventPagePage id={Number(pageMatch.id)} />
       </RequireAuth>
     );
   if (clean === "/admin")

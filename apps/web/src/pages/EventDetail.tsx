@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { startOfToday, useQueryParams } from "../lib/hooks";
@@ -20,6 +20,8 @@ import type { EventDetail, Scope, TicketPrice } from "../lib/types";
 import { Alert, Badge, Button, Card, EmptyState, ErrorState, Link, Skeleton } from "../components/ui";
 import { QuantitySelector } from "../components/QuantitySelector";
 import { EventCard } from "../components/EventCard";
+import { EventPageContent } from "../components/EventPageContent";
+import { ReviewsSection } from "../components/Reviews";
 import { IconArrow, IconCalendar, IconClock, IconPin, IconShield, IconUser } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 
@@ -140,6 +142,19 @@ export function EventDetailPage({ slug }: { slug: string }) {
   const query = useQuery({ queryKey: keys.event(slug, scope), queryFn: () => api.event(slug, scope) });
   const event = query.data;
   const related = useEvents({ typeId: event?.type.id, from: startOfToday(), pageSize: 5, sort: "date" });
+
+  // Journal d'activité (MongoDB) : l'API journalise la lecture ; le navigateur complète
+  // avec la durée de consultation à la sortie de la page (écriture explicite POST /activites).
+  const eventId = event?.id;
+  useEffect(() => {
+    if (!eventId || scope !== "public") return;
+    const started = Date.now();
+    return () => {
+      void api
+        .recordActivity({ type: "vue_evenement", evenementId: eventId, payload: { source: "web", dureeMs: Date.now() - started } })
+        .catch(() => undefined);
+    };
+  }, [eventId, scope]);
 
   // Une commande porte sur un seul tarif : choisir une quantité sur un tarif réinitialise les autres.
   const [selection, setSelection] = useState<{ tarifId: number; quantite: number } | null>(null);
@@ -279,9 +294,12 @@ export function EventDetailPage({ slug }: { slug: string }) {
             </div>
           </div>
           {isOwner && (
-            <div className="mt-4">
+            <div className="mt-4 flex gap-2">
               <Button variant="outline" size="sm" onClick={() => navigate("/organizer/events")}>
                 Gérer mes événements
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => navigate(`/organizer/events/${event.id}/page`)} data-testid="edit-page">
+                Modifier la page
               </Button>
             </div>
           )}
@@ -309,19 +327,6 @@ export function EventDetailPage({ slug }: { slug: string }) {
               ))}
             </div>
 
-            {event.template && (
-              <div className="mt-6 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-xs font-semibold text-primary">
-                  ✦ Template NoSQL : {event.template.name}
-                </span>
-                {event.template.highlights.map((h, idx) => (
-                  <span key={idx} className="rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-foreground/80">
-                    ✓ {h}
-                  </span>
-                ))}
-              </div>
-            )}
-
             {event.description && (
               <section className="mt-10">
                 <h2 className="font-display text-xl font-bold">À propos</h2>
@@ -329,36 +334,8 @@ export function EventDetailPage({ slug }: { slug: string }) {
               </section>
             )}
 
-            {event.template && event.template.sections && event.template.sections.length > 0 && (
-              <div className="mt-10 space-y-6">
-                {event.template.sections.map((sec, i) => (
-                  <section key={i} className="rounded-[16px] border border-border bg-card p-5">
-                    <h3 className="font-display text-lg font-bold text-foreground flex items-center gap-2">
-                      <span className="flex size-7 items-center justify-center rounded-lg bg-primary/15 text-primary text-xs">◈</span>
-                      {sec.title}
-                    </h3>
-                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground whitespace-pre-line">{sec.content}</p>
-                  </section>
-                ))}
-              </div>
-            )}
-
-            {event.template && event.template.faq && event.template.faq.length > 0 && (
-              <section className="mt-10">
-                <h2 className="font-display text-xl font-bold flex items-center gap-2">
-                  <span>Questions fréquentes (FAQ)</span>
-                  <span className="text-xs font-mono font-normal text-muted-foreground">Document MongoDB</span>
-                </h2>
-                <div className="mt-4 space-y-3">
-                  {event.template.faq.map((item, idx) => (
-                    <div key={idx} className="rounded-[12px] border border-border bg-card/50 p-4">
-                      <h4 className="text-sm font-semibold text-foreground">{item.question}</h4>
-                      <p className="mt-1.5 text-sm text-muted-foreground">{item.answer}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            {/* Page éditoriale (MongoDB) : galerie, programme, sections, FAQ */}
+            <EventPageContent event={event} scope={scope} />
 
             {event.attributs.length > 0 && (
               <section className="mt-10">
@@ -373,6 +350,8 @@ export function EventDetailPage({ slug }: { slug: string }) {
                 </dl>
               </section>
             )}
+
+            <ReviewsSection event={event} isOwner={!!isOwner} />
 
             <section className="mt-10">
               <h2 className="font-display text-xl font-bold">Organisateur</h2>
