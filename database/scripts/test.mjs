@@ -50,8 +50,7 @@ console.log('\n» concurrence (sessions parallèles)');
   if (res.status !== 0) failed++;
 }
 
-console.log('
-» base documentaire MongoDB (schéma, validateurs, index, requêtes)');
+console.log('\n» base documentaire MongoDB (schéma, validateurs, index, requêtes)');
 {
   // security-audit-ignore: child-process -- node + chemin de script constant, sans shell
   const res = spawnSync(process.execPath, [fileURLToPath(new URL('../nosql/tests/nosql.test.mjs', import.meta.url))], {
@@ -64,4 +63,4 @@ if (failed > 0) {
   console.error(`\n${failed} échec(s)`);
   process.exit(1);
 }
-console.log('\n✓ tous les tests SQL passent');
+console.log('\n✓ tous les tests SQL et NoSQL passent');

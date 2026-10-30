@@ -2,8 +2,53 @@
 
 > Mis à jour pendant chaque phase. Légende : ✅ fait · 🔄 en cours · ⬜ à faire · ⚠️ bloqué / à vérifier
 
-**Phase courante : 16 — Charge, concurrence, durcissement, documentation** · statut : ✅ livrée hors webhook
-Détail : [phases/phase-16-durcissement.md](phases/phase-16-durcissement.md) · index : [phases/README.md](phases/README.md)
+**Phase courante : 17 — Mise en conformité consignes / grille (branche `feat/mise-en-conformite`)** · statut : 🔄 code et docs livrés, vidéo à faire
+Grille : `Projet-BDD-Grille-evaluation.pdf` · présentation : [../docs/presentation.md](../docs/presentation.md)
+
+## Phase 17 — checklist globale (grille d'évaluation)
+
+### Étape 0 — base saine
+- ✅ Travail MongoDB commité (il était non suivi : risque « une seule famille », −4)
+- ✅ Fusion rapide dans `master`, suite complète verte (unit 67+42+42, SQL, e2e 72)
+- ✅ Branche `feat/mise-en-conformite` créée depuis `master`
+- ⚠️ `git push Billetto master` impossible depuis la session (clé SSH absente, `gh` absent) : **à pousser depuis votre terminal**
+
+### Étape 1 — démarrage en une commande
+- ✅ `docker-compose.yml` : défauts de démonstration pour tous les secrets, `.env` les remplace
+- ✅ `.env.example` aligné, avertissement dans `init` quand les défauts sont utilisés
+- ✅ `docs/` versionné (était gitignoré)
+- ⬜ Simulation machine vierge : `docker compose down -v` puis `docker compose --env-file /dev/null up -d --wait` → `/health` ok, comptages SQL + Mongo
+
+### Étape 2 — base NoSQL justifiée
+- ✅ `database/nosql/schema.mjs` : 5 collections, validateurs `$jsonSchema`, index unique / partiel / texte / TTL
+- ✅ `seed-nosql.mjs` déterministe : 100 pages, 2 119 avis, 20 060 activités (lit les ids SQL)
+- ✅ 5 requêtes `mongosh` (`pnpm db:queries:nosql`) + tests NoSQL dans `pnpm db:test`
+- ✅ API : modules `event-pages`, `reviews`, `activity` ; hooks de journal (vue, recherche, connexion, achat, scan)
+- ✅ Endpoints croisés : `/events/:ref/page`, `/events/:id/avis`, `/events/tendances`, `/activites/evenements/:id`
+- ✅ Mongo obligatoire au démarrage, `/health` sur les deux bases, erreurs 11000 → 409 / 121 → 422
+- ✅ `doc/api.md` à jour ; e2e API : 7 scénarios NoSQL (72/72)
+- ✅ Front : page éditoriale, avis, tendances, éditeur organisateur, avis à répondre ; Playwright `nosql-flow` (2/2)
+
+### Étape 3 — documentation
+- ✅ `docs/presentation.md` : 9 sections de la consigne + annexe grille
+- ✅ `docs/schemas/` : architecture, MCD, MLD (`.mmd` + `.png` via `scripts/render-schemas.mjs`)
+- ✅ MPD = migrations commentées (`001_schema.sql` …)
+- ✅ Sauvegarde : `scripts/backup.sh` / `restore.sh`, testés (comptages identiques après restauration)
+- ✅ `docs/video/README.md` : déroulé
+
+### Étape 4 — README
+- ✅ Réécrit : présentation, pile, une commande, URLs/comptes, endpoints (SQL / Mongo / croisé), arborescence expliquée, liens, outils d'IA
+
+### Étape 5 — vidéo (à faire par l'auteur)
+- ⬜ Enregistrer 8–12 min selon `docs/video/README.md` (démarrage à vide, preuves de peuplement, parcours, écriture puis relecture, requêtes, justification)
+- ⬜ Déposer `docs/video/billetto-presentation.mp4` ou mettre le lien dans le README et `docs/video/README.md`
+
+### Livraison
+- ⬜ Pousser la branche, ouvrir la PR vers `master`, fusionner
+- ⬜ Vérifier que CI (`ci.yml`, qui démarre maintenant mongodb + mailpit) est vert
+- ⬜ Communiquer le lien du dépôt avant la date limite
+
+Détail phase 16 : [phases/phase-16-durcissement.md](phases/phase-16-durcissement.md) · index : [phases/README.md](phases/README.md)
 
 > Depuis la phase 10, la liste de contrôle détaillée de chaque phase est tenue dans `todo.md` (racine du dépôt) ; ce fichier garde l'état d'ensemble et le journal.
 

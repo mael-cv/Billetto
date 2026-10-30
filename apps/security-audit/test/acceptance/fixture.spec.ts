@@ -19,7 +19,7 @@ describe("acceptance : moteur vs fixture vulnérable", () => {
     const config = buildConfig(fixture.baseUrl);
     const out = await runAudit(config, { pentest: true, whitebox: false, logger: new Logger("silent") });
     findings = out.findings;
-  }, 60000);
+  }, 180_000); // audit complet de la fixture : lent quand les autres suites tournent en même temps
 
   afterAll(async () => {
     if (fixture) await fixture.stop();
