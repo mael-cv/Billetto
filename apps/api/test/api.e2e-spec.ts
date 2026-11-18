@@ -1,9 +1,22 @@
-import { createHmac } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaService } from '../src/common/database/prisma.service';
 import { MongoService } from '../src/common/mongodb/mongo.service';
 import { cleanFixtures, createFixtures, email, type Fixtures } from './fixtures';
-import { Client, DEMO_PASSWORD, owner, RUN, startApp, TEST_PASSWORD, testConfig } from './support';
+import {
+  buy,
+  Client,
+  deliverWebhook,
+  type FakeGateway,
+  installFakeGateway,
+  owner,
+  payHold,
+  RUN,
+  sessionIdOf,
+  startApp,
+  stripeSignature,
+  TEST_PASSWORD,
+  testConfig,
+} from './support';
 
 /**
  * Tests de bout en bout sur la vraie base PostgreSQL (migrations 001–006 + seed).
@@ -11,9 +24,8 @@ import { Client, DEMO_PASSWORD, owner, RUN, startApp, TEST_PASSWORD, testConfig 
  * appliquée par PostgreSQL (GRANT, RLS, fonctions), pas seulement par l'API.
  */
 describe('API Billetto (e2e)', () => {
-  // security-audit-ignore: generic-secret -- secret HMAC éphémère des tests e2e
-  const webhookSecret = 'api-e2e-webhook-secret-with-at-least-32-characters';
   let app: NestFastifyApplication;
+  let gateway: FakeGateway;
   let fx: Fixtures;
   let anonyme: Client;
   let visiteur: Client;
@@ -24,12 +36,14 @@ describe('API Billetto (e2e)', () => {
 
   beforeAll(async () => {
     fx = await createFixtures();
-    app = await startApp(testConfig({ PAYMENTS_WEBHOOK_SECRET: webhookSecret }));
+    app = await startApp(testConfig());
+    // Aucun appel à Stripe pendant les tests : la passerelle est remplacée par un double.
+    gateway = installFakeGateway(app);
     anonyme = await Client.anonymous(app);
-    visiteur = await Client.login(app, 'demo-visiteur@billetto.test', DEMO_PASSWORD);
-    orgaA = await Client.login(app, 'demo-organisateur@billetto.test', DEMO_PASSWORD);
+    visiteur = await Client.login(app, fx.userVisiteur, TEST_PASSWORD);
+    orgaA = await Client.login(app, fx.userOrgaA, TEST_PASSWORD);
     orgaB = await Client.login(app, fx.userOrgaB, TEST_PASSWORD);
-    admin = await Client.login(app, 'demo-admin@billetto.test', DEMO_PASSWORD);
+    admin = await Client.login(app, fx.userAdmin, TEST_PASSWORD);
   });
 
   afterAll(async () => {
@@ -82,15 +96,19 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('requête modifiante sans jeton CSRF → 403', async () => {
-      const res = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 }, { 'x-csrf-token': '' });
+      const res = await visiteur.post(
+        '/orders/hold',
+        { tarifId: fx.tarifQuota5, quantite: 1, modePaiement: 'carte' },
+        { 'x-csrf-token': '' },
+      );
       expect(res.statusCode).toBe(403);
       expect(res.json().error).toBe('CSRF_INVALIDE');
     });
 
     it('requête modifiante depuis une origine étrangère (jeton valide) → 403', async () => {
       const res = await visiteur.post(
-        '/tickets/purchase',
-        { tarifId: fx.tarifQuota5, quantite: 1 },
+        '/orders/hold',
+        { tarifId: fx.tarifQuota5, quantite: 1, modePaiement: 'carte' },
         { origin: 'https://evil.example' },
       );
       expect(res.statusCode).toBe(403);
@@ -109,10 +127,54 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('validation : 400 avec détail des champs, champs inconnus refusés', async () => {
-      const res = await visiteur.post('/tickets/purchase', { tarifId: 'abc', quantite: 0, prix: 0 });
+      const res = await visiteur.post('/orders/hold', { tarifId: 'abc', quantite: 0, modePaiement: 'carte', prix: 0 });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toMatchObject({ error: 'VALIDATION', message: 'Requête invalide' });
       expect(res.json().details.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('anciennes routes de paiement « gratuit » supprimées → 404', async () => {
+      // Plus aucun moyen pour un acheteur de créer lui-même une commande payée.
+      expect((await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 })).statusCode).toBe(404);
+      expect((await visiteur.post('/orders/1/confirm')).statusCode).toBe(404);
+      expect((await visiteur.post('/waitlist/1/confirm')).statusCode).toBe(404);
+    });
+
+    it('limite de débit : le compteur strict vise la route résolue, pas l’URL brute', async () => {
+      const limited = await startApp(testConfig({ RATE_LIMIT_AUTH_MAX: '2' }));
+      try {
+        const client = await Client.anonymous(limited);
+        const body = { email: 'x@billetto.test', password: 'y' };
+        // Chemin encodé (%6c = « l ») : s'il atteint la connexion, il vise le même compteur.
+        const statuses = [
+          (await client.post('/auth/login', body)).statusCode,
+          (await client.post('/auth/%6cogin', body)).statusCode,
+          (await client.post('/auth/%6Cogin', body)).statusCode,
+          (await client.post('/auth/login', body)).statusCode,
+          (await client.post('/auth/%6cogin', body)).statusCode,
+        ];
+        // 401 = la tentative a atteint la vérification du mot de passe : jamais plus que la limite.
+        expect(statuses.filter((s) => s === 401).length).toBeLessThanOrEqual(2);
+        expect(statuses).toContain(429);
+      } finally {
+        await limited.close();
+      }
+    });
+
+    it('limite de débit : X-Forwarded-For ignoré sans proxy de confiance', async () => {
+      const limited = await startApp(testConfig({ RATE_LIMIT_AUTH_MAX: '2', TRUST_PROXY: '0' }));
+      try {
+        const client = await Client.anonymous(limited);
+        const body = { email: 'x@billetto.test', password: 'y' };
+        const statuses: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          statuses.push((await client.post('/auth/login', body, { 'x-forwarded-for': `203.0.113.${i + 1}` })).statusCode);
+        }
+        // Changer l'en-tête à chaque requête ne donne pas un nouveau compteur.
+        expect(statuses).toEqual([401, 401, 429]);
+      } finally {
+        await limited.close();
+      }
     });
 
     it('paramètres : identifiant, tri et taille de page contrôlés', async () => {
@@ -138,56 +200,180 @@ describe('API Billetto (e2e)', () => {
 
   // ---------------------------------------------------------------------------
   describe('webhook de paiement', () => {
-    it('rejette une signature invalide, puis confirme une fois et rend le rejeu idempotent', async () => {
+    let tarifWebhook: number;
+    const ticketsOf = async (reservationId: number) => {
+      const [row] = await owner.$queryRaw<{ n: bigint; statut: string }[]>`
+        SELECT (SELECT count(*) FROM billets b WHERE b.commande_id = r.commande_id) AS n, r.statut
+        FROM reservations r WHERE r.id = ${reservationId}`;
+      return { billets: Number(row?.n), statut: row?.statut };
+    };
+    const newHold = async (quantite = 1) => {
+      const hold = await visiteur.post('/orders/hold', { tarifId: tarifWebhook, quantite, modePaiement: 'carte' });
+      expect(hold.statusCode).toBe(201);
+      const checkout = await visiteur.post(`/orders/holds/${hold.json().id}/checkout`);
+      expect(checkout.statusCode).toBe(200);
+      expect(checkout.json()).toMatchObject({ statut: 'paiement', url: expect.stringMatching(/^https:\/\/checkout\.stripe\.com\//) });
+      return { reservationId: hold.json().id as number, sessionId: sessionIdOf(checkout.json().url) };
+    };
+
+    beforeAll(async () => {
       const [tarif] = await owner.$queryRaw<{ id: bigint }[]>`
         INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
-        VALUES (${fx.eventFutur}, ${`Webhook ${RUN}`}, 25, 3, now() - interval '1 day', now() + interval '29 days')
+        VALUES (${fx.eventFutur}, ${`Webhook ${RUN}`}, 25, 50, now() - interval '1 day', now() + interval '29 days')
         RETURNING id`;
-      const [buyer] = await owner.$queryRaw<{ id: bigint }[]>`
-        SELECT id FROM utilisateurs WHERE email = 'demo-visiteur@billetto.test'`;
-      const [hold] = await owner.$queryRaw<{ reservation_id: bigint }[]>`
-        SELECT reservation_id FROM creer_reservation(${buyer.id}, ${tarif.id}, 1, 'carte')`;
-      const event = {
-        eventId: `e2e-webhook-${RUN}`,
-        type: 'payment.succeeded',
-        reservationId: Number(hold.reservation_id),
-      };
-      const rawBody = JSON.stringify(event);
-      const invalid = await app.inject({
-        method: 'POST',
-        url: '/api/v1/payments/webhook',
-        payload: rawBody,
-        headers: { 'content-type': 'application/json', 'x-billetto-signature': '0'.repeat(64) },
-      });
-      expect(invalid.statusCode).toBe(401);
-      expect(invalid.json()).toMatchObject({ error: 'SIGNATURE_WEBHOOK_INVALIDE' });
+      tarifWebhook = Number(tarif?.id);
+    });
 
-      const signature = createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-      const deliver = () =>
-        app.inject({
+    it('le montant envoyé au prestataire vient du serveur (prix figé du hold), jamais du client', async () => {
+      const { reservationId } = await newHold(2);
+      const request = gateway.requests.find((r) => r.reservationId === reservationId);
+      expect(request).toMatchObject({ amountCents: 5000, evenementId: fx.eventFutur });
+      expect(request?.successUrl).toBe(`http://localhost:3000/#/checkout/success?reservation=${reservationId}`);
+      // Aucun champ du client n'est accepté par la route de paiement.
+      expect((await visiteur.post(`/orders/holds/${reservationId}/checkout`, { amountCents: 1 })).statusCode).toBe(200);
+      expect(gateway.requests.filter((r) => r.reservationId === reservationId).every((r) => r.amountCents === 5000)).toBe(true);
+    });
+
+    it('signature absente, fausse, d’un autre secret ou trop ancienne → 401, rien n’est émis', async () => {
+      const { reservationId, sessionId } = await newHold();
+      gateway.pay(sessionId);
+      const body = JSON.stringify({ id: 'evt_e2e_forge', type: 'checkout.session.completed', data: { object: { id: sessionId } } });
+      const old = Math.floor(Date.now() / 1000) - 3600;
+      for (const signature of [
+        `t=${Math.floor(Date.now() / 1000)},v1=${'0'.repeat(64)}`,
+        stripeSignature(body, 'whsec_un_autre_secret_que_celui_du_serveur'),
+        stripeSignature(body, undefined, old),
+        'n-importe-quoi',
+      ]) {
+        const res = await app.inject({
           method: 'POST',
           url: '/api/v1/payments/webhook',
-          payload: rawBody,
-          headers: { 'content-type': 'application/json', 'x-billetto-signature': signature },
+          payload: body,
+          headers: { 'content-type': 'application/json', 'stripe-signature': signature },
         });
-      const first = await deliver();
-      const replay = await deliver();
-      expect(first.statusCode).toBe(200);
-      expect(first.json()).toMatchObject({ duplicate: false, commandeId: expect.any(Number), billetIds: [expect.any(Number)] });
-      expect(replay.statusCode).toBe(200);
-      expect(replay.json()).toMatchObject({ duplicate: true, commandeId: null, billetIds: null });
+        expect(res.statusCode).toBe(401);
+        expect(res.json()).toMatchObject({ error: 'SIGNATURE_WEBHOOK_INVALIDE' });
+      }
+      const sans = await app.inject({
+        method: 'POST',
+        url: '/api/v1/payments/webhook',
+        payload: body,
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(sans.statusCode).toBe(401);
+      expect(await ticketsOf(reservationId)).toEqual({ billets: 0, statut: 'active' });
+    });
 
-      const [{ webhook_count, ticket_count }] = await owner.$queryRaw<{ webhook_count: bigint; ticket_count: bigint }[]>`
-        SELECT (SELECT count(*) FROM paiement_webhooks WHERE evenement_externe_id = ${event.eventId}) AS webhook_count,
-               (SELECT count(*) FROM billets WHERE commande_id = ${first.json().commandeId}) AS ticket_count`;
-      expect(Number(webhook_count)).toBe(1);
-      expect(Number(ticket_count)).toBe(1);
+    it('webhook correctement signé mais session NON payée chez le prestataire → aucun billet', async () => {
+      // Connaître le secret de signature ne suffit pas : l'état du paiement est relu auprès du prestataire.
+      const { reservationId, sessionId } = await newHold();
+      const res = await deliverWebhook(app, sessionId);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true, resultat: 'ignore' });
+      expect(await ticketsOf(reservationId)).toEqual({ billets: 0, statut: 'active' });
+
+      // Session inventée : refusée, rien n'est émis.
+      const inconnue = await deliverWebhook(app, 'cs_test_sessioninventeeparlattaquant');
+      expect(inconnue.statusCode).toBe(422);
+      // Autre type d'événement : ignoré.
+      const autre = await deliverWebhook(app, sessionId, { type: 'payment_intent.created' });
+      expect(autre.json()).toEqual({ received: true, resultat: 'ignore' });
+    });
+
+    it('montant encaissé différent du prix du hold → 409, aucun billet, événement non journalisé', async () => {
+      const { reservationId, sessionId } = await newHold();
+      gateway.pay(sessionId, { amountTotal: 1 });
+      const res = await deliverWebhook(app, sessionId, { eventId: `evt_e2e_montant_${RUN}` });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('MONTANT_INCOHERENT');
+      expect(await ticketsOf(reservationId)).toEqual({ billets: 0, statut: 'active' });
+      const [{ n }] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM paiement_webhooks WHERE evenement_externe_id = ${`evt_e2e_montant_${RUN}`}`;
+      expect(Number(n)).toBe(0);
+    });
+
+    it('paiement confirmé : billets émis une seule fois, rejeu idempotent', async () => {
+      const { reservationId, sessionId } = await newHold();
+      gateway.pay(sessionId);
+      const eventId = `evt_e2e_ok_${RUN}`;
+      const first = await deliverWebhook(app, sessionId, { eventId });
+      const replay = await deliverWebhook(app, sessionId, { eventId });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({ received: true, resultat: 'traite' });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.json()).toEqual({ received: true, resultat: 'doublon' });
+      expect(await ticketsOf(reservationId)).toEqual({ billets: 1, statut: 'confirmee' });
+
+      // Un second événement pour la même session ne crée pas une seconde commande.
+      const autreEvenement = await deliverWebhook(app, sessionId, { eventId: `evt_e2e_bis_${RUN}` });
+      expect(autreEvenement.statusCode).toBe(409);
+      expect(await ticketsOf(reservationId)).toEqual({ billets: 1, statut: 'confirmee' });
+
+      const [{ n }] = await owner.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM paiement_webhooks WHERE reservation_id = ${reservationId}`;
+      expect(Number(n)).toBe(1);
+
+      const hold = (await visiteur.get(`/orders/holds/${reservationId}`)).json();
+      expect(hold).toMatchObject({ statut: 'confirmee', commandeId: expect.any(Number) });
+    });
+
+    it('réservations : celles d’un autre → 404 (lecture, paiement, annulation) ; annulation par son auteur', async () => {
+      const { reservationId } = await newHold();
+      const intrus = await Client.login(app, fx.userOrgaB, TEST_PASSWORD);
+      expect((await intrus.get(`/orders/holds/${reservationId}`)).statusCode).toBe(404);
+      expect((await intrus.post(`/orders/holds/${reservationId}/checkout`)).statusCode).toBe(404);
+      expect((await intrus.delete(`/orders/holds/${reservationId}`)).statusCode).toBe(404);
+      expect((await anonyme.post(`/orders/holds/${reservationId}/checkout`)).statusCode).toBe(401);
+
+      expect((await visiteur.get('/orders/holds/me')).json().map((h: { id: number }) => h.id)).toContain(reservationId);
+      expect((await visiteur.delete(`/orders/holds/${reservationId}`)).statusCode).toBe(204);
+      expect((await visiteur.get(`/orders/holds/${reservationId}`)).json().statut).toBe('annulee');
+      const again = await visiteur.post(`/orders/holds/${reservationId}/checkout`);
+      expect(again.statusCode).toBe(409);
+      expect(again.json().error).toBe('RESERVATION_NON_ACTIVE');
+    });
+
+    it('plafond : un compte ne peut pas immobiliser plus de 10 places d’un tarif sans payer', async () => {
+      const plafond = await Client.anonymous(app);
+      await plafond.post('/auth/register', { email: email('plafond'), password: TEST_PASSWORD, prenom: 'P', nom: 'Lafond' });
+      await plafond.post('/auth/login', { email: email('plafond'), password: TEST_PASSWORD });
+      const hold = (quantite: number) => plafond.post('/orders/hold', { tarifId: tarifWebhook, quantite, modePaiement: 'virement' });
+      expect((await hold(10)).statusCode).toBe(201);
+      const refus = await hold(1);
+      expect(refus.statusCode).toBe(409);
+      expect(refus.json().error).toBe('PLAFOND_RESERVATIONS');
+      // Un virement n'immobilise plus les places que 24 h.
+      const [mine] = (await plafond.get('/orders/holds/me')).json();
+      expect(new Date(mine.expireA).getTime() - Date.now()).toBeLessThanOrEqual(24 * 3_600_000);
+    });
+
+    it('virement : l’acheteur ne peut pas se valider ; seul l’organisateur de l’événement (ou un admin) le peut', async () => {
+      const hold = await visiteur.post('/orders/hold', { tarifId: tarifWebhook, quantite: 1, modePaiement: 'virement' });
+      const id: number = hold.json().id;
+
+      expect((await visiteur.post(`/orders/holds/${id}/validate-transfer`)).statusCode).toBe(403);
+      expect((await visiteur.get('/orders/holds/transfers')).statusCode).toBe(403);
+      // Un virement ne se règle pas par carte.
+      expect((await visiteur.post(`/orders/holds/${id}/checkout`)).json().error).toBe('MODE_PAIEMENT_INVALIDE');
+      // L'organisateur d'un autre collectif ne voit pas la réservation.
+      expect((await orgaB.post(`/orders/holds/${id}/validate-transfer`)).statusCode).toBe(404);
+      expect((await orgaB.get('/orders/holds/transfers')).json().map((t: { id: number }) => t.id)).not.toContain(id);
+
+      const attendus = (await orgaA.get('/orders/holds/transfers')).json();
+      expect(attendus.find((t: { id: number }) => t.id === id)).toMatchObject({ quantite: 1, montantTotal: '25.00' });
+      expect(JSON.stringify(attendus)).not.toMatch(/email|utilisateurId/);
+
+      const ok = await orgaA.post(`/orders/holds/${id}/validate-transfer`);
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toMatchObject({ commandeId: expect.any(Number), billetIds: [expect.any(Number)] });
+      expect((await visiteur.get(`/orders/${ok.json().commandeId}`)).json()).toMatchObject({ statut: 'paid', nbBillets: 1 });
+      expect((await orgaA.post(`/orders/holds/${id}/validate-transfer`)).statusCode).toBe(409);
     });
   });
 
   // ---------------------------------------------------------------------------
   describe('authentification', () => {
-    it('inscription : cookie de session HttpOnly + SameSite=Strict, rôle visitor imposé', async () => {
+    it('inscription : aucune session ouverte ; connexion ensuite, cookie HttpOnly + SameSite=Strict, rôle visitor imposé', async () => {
       const client = await Client.anonymous(app);
       const res = await client.post('/auth/register', {
         email: email('inscrit'),
@@ -196,13 +382,19 @@ describe('API Billetto (e2e)', () => {
         nom: 'Compte',
       });
       expect(res.statusCode).toBe(201);
-      expect(res.json().user).toMatchObject({ role: 'visitor', email: email('inscrit') });
-      const session = res.cookies.find((c) => c.name === 'billetto_session');
+      expect(res.json()).toEqual({ message: expect.any(String) });
+      expect(res.cookies.find((c) => c.name === 'billetto_session')).toBeUndefined();
+      expect((await client.get('/auth/me')).statusCode).toBe(401);
+
+      const login = await client.post('/auth/login', { email: email('inscrit'), password: TEST_PASSWORD });
+      expect(login.statusCode).toBe(200);
+      expect(login.json().user).toMatchObject({ role: 'visitor', email: email('inscrit') });
+      const session = login.cookies.find((c) => c.name === 'billetto_session');
       expect(session).toMatchObject({ httpOnly: true, sameSite: 'Strict', secure: true });
       expect((await client.get('/auth/me')).statusCode).toBe(200);
     });
 
-    it('inscription : rôle non modifiable, mot de passe court refusé, e-mail en double → 409', async () => {
+    it('inscription : rôle non modifiable, mot de passe faible refusé', async () => {
       const client = await Client.anonymous(app);
       const escalade = await client.post('/auth/register', {
         email: email('escalade'),
@@ -212,21 +404,49 @@ describe('API Billetto (e2e)', () => {
         role: 'admin',
       });
       expect(escalade.statusCode).toBe(400);
-      expect(
-        (await client.post('/auth/register', { email: email('court'), password: 'court', prenom: 'X', nom: 'Y' })).statusCode,
-      ).toBe(400);
-      const doublon = await client.post('/auth/register', {
-        email: 'demo-visiteur@billetto.test',
-        password: TEST_PASSWORD,
-        prenom: 'X',
-        nom: 'Y',
-      });
-      expect(doublon.statusCode).toBe(409);
+      for (const password of ['court', 'aaaaaaaaaaaaaaaa', 'password1234', 'azertyuiop123']) {
+        expect((await client.post('/auth/register', { email: email('faible'), password, prenom: 'X', nom: 'Y' })).statusCode).toBe(400);
+      }
+    });
+
+    it('inscription : même réponse pour une adresse libre et une adresse déjà utilisée (pas d’énumération)', async () => {
+      const client = await Client.anonymous(app);
+      const body = { password: TEST_PASSWORD, prenom: 'X', nom: 'Y' };
+      const libre = await client.post('/auth/register', { ...body, email: email('libre') });
+      const prise = await client.post('/auth/register', { ...body, password: `Autre-${TEST_PASSWORD}`, email: fx.userVisiteur });
+      expect(prise.statusCode).toBe(libre.statusCode);
+      expect(prise.json()).toEqual(libre.json());
+      expect(prise.cookies.map((c) => c.name)).toEqual(libre.cookies.map((c) => c.name));
+      // Le compte existant n'a pas été modifié : son mot de passe d'origine fonctionne toujours.
+      expect((await client.post('/auth/login', { email: fx.userVisiteur, password: `Autre-${TEST_PASSWORD}` })).statusCode).toBe(401);
+      expect((await Client.login(app, fx.userVisiteur, TEST_PASSWORD)).csrf).not.toBe('');
+    });
+
+    it('verrouillage : 10 échecs consécutifs bloquent le compte, même avec le bon mot de passe', async () => {
+      const client = await Client.anonymous(app);
+      const compte = email('verrou');
+      await client.post('/auth/register', { email: compte, password: TEST_PASSWORD, prenom: 'V', nom: 'Errou' });
+      for (let i = 0; i < 10; i++) {
+        expect((await client.post('/auth/login', { email: compte, password: 'mauvais-mot-de-passe' })).statusCode).toBe(401);
+      }
+      const bloque = await client.post('/auth/login', { email: compte, password: TEST_PASSWORD });
+      expect(bloque.statusCode).toBe(401);
+      // Même message que pour un mot de passe faux : le verrouillage ne révèle rien.
+      expect(bloque.json().message).toBe('Identifiants invalides');
+
+      await owner.$executeRaw`UPDATE utilisateurs SET verrouille_jusqu_a = now() - interval '1 second' WHERE email = ${compte}`;
+      expect((await client.post('/auth/login', { email: compte, password: TEST_PASSWORD })).statusCode).toBe(200);
+    });
+
+    it('changement de mot de passe : le nouveau doit différer de l’actuel', async () => {
+      const client = await Client.login(app, email('inscrit'), TEST_PASSWORD);
+      const res = await client.post('/auth/password', { currentPassword: TEST_PASSWORD, newPassword: TEST_PASSWORD });
+      expect(res.statusCode).toBe(400);
     });
 
     it('connexion : même réponse pour mauvais mot de passe et compte inconnu', async () => {
       const client = await Client.anonymous(app);
-      const faux = await client.post('/auth/login', { email: 'demo-visiteur@billetto.test', password: 'mauvais' });
+      const faux = await client.post('/auth/login', { email: fx.userVisiteur, password: 'mauvais' });
       const inconnu = await client.post('/auth/login', { email: 'inconnu@billetto.test', password: 'mauvais' });
       expect(faux.statusCode).toBe(401);
       expect(inconnu.statusCode).toBe(401);
@@ -246,9 +466,22 @@ describe('API Billetto (e2e)', () => {
       faux.setCookie('billetto_session', 'eyJhbGciOiJub25lIn0.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiJ9.');
       expect((await faux.get('/auth/me')).statusCode).toBe(401);
 
-      const client = await Client.login(app, 'demo-visiteur@billetto.test', DEMO_PASSWORD);
+      // Compte dédié : la déconnexion révoque toutes les sessions du compte.
+      const client = await Client.login(app, email('inscrit'), TEST_PASSWORD);
       expect((await client.post('/auth/logout')).statusCode).toBe(204);
       expect((await client.get('/auth/me')).statusCode).toBe(401);
+    });
+
+    it('déconnexion : le jeton est révoqué côté serveur (une copie du cookie ne vaut plus rien)', async () => {
+      const client = await Client.login(app, email('inscrit'), TEST_PASSWORD);
+      const login = await client.post('/auth/login', { email: email('inscrit'), password: TEST_PASSWORD });
+      const token = login.cookies.find((c) => c.name === 'billetto_session')?.value ?? '';
+      expect(token).not.toBe('');
+      expect((await client.post('/auth/logout')).statusCode).toBe(204);
+
+      const voleur = await Client.anonymous(app);
+      voleur.setCookie('billetto_session', token);
+      expect((await voleur.get('/auth/me')).statusCode).toBe(401);
     });
 
     it('limitation de débit sur la connexion → 429', async () => {
@@ -318,15 +551,15 @@ describe('API Billetto (e2e)', () => {
   describe('achat, commandes, remboursement', () => {
     let commande: number;
 
-    it('achat anonyme → 401', async () => {
-      expect((await anonyme.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 })).statusCode).toBe(401);
+    it('réservation anonyme → 401', async () => {
+      const res = await anonyme.post('/orders/hold', { tarifId: fx.tarifQuota5, quantite: 1, modePaiement: 'carte' });
+      expect(res.statusCode).toBe(401);
     });
 
-    it('achat valide → 201, visible dans billets et commandes', async () => {
-      const res = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 2 });
-      expect(res.statusCode).toBe(201);
-      expect(res.json()).toMatchObject({ montantTotal: '50.00', billetIds: [expect.any(Number), expect.any(Number)] });
-      commande = res.json().commandeId;
+    it('achat payé (réservation, paiement, webhook) → visible dans billets et commandes', async () => {
+      const achat = await buy(app, gateway, visiteur, fx.tarifQuota5, 2);
+      expect(achat.billetIds).toHaveLength(2);
+      commande = achat.commandeId;
 
       const detail = (await visiteur.get(`/orders/${commande}`)).json();
       expect(detail).toMatchObject({ id: commande, statut: 'paid', montantTotal: '50.00', nbBillets: 2 });
@@ -344,19 +577,19 @@ describe('API Billetto (e2e)', () => {
       expect((await anonyme.get(`/events/${fx.eventFutur}`)).json().tarifs.find((t: { id: number }) => t.id === fx.tarifQuota5).restantes).toBe(3);
     });
 
-    it('quota épuisé → 409 QUOTA_EPUISE (règle appliquée par acheter_billet)', async () => {
-      const res = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 4 });
+    it('quota épuisé → 409 QUOTA_EPUISE (règle appliquée par creer_reservation)', async () => {
+      const res = await visiteur.post('/orders/hold', { tarifId: fx.tarifQuota5, quantite: 4, modePaiement: 'carte' });
       expect(res.statusCode).toBe(409);
       expect(res.json()).toMatchObject({ error: 'QUOTA_EPUISE' });
       expect(res.json().message).toMatch(/3 restant/);
     });
 
     it('événement commencé → 409, tarif inexistant → 404', async () => {
-      const commence = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifCommence, quantite: 1 });
+      const commence = await visiteur.post('/orders/hold', { tarifId: fx.tarifCommence, quantite: 1, modePaiement: 'carte' });
       expect(commence.statusCode).toBe(409);
       expect(commence.json().error).toBe('EVENEMENT_COMMENCE');
 
-      const inexistant = await visiteur.post('/tickets/purchase', { tarifId: 999_999_999, quantite: 1 });
+      const inexistant = await visiteur.post('/orders/hold', { tarifId: 999_999_999, quantite: 1, modePaiement: 'carte' });
       expect(inexistant.statusCode).toBe(404);
       expect(inexistant.json().error).toBe('TARIF_INTROUVABLE');
     });
@@ -364,6 +597,7 @@ describe('API Billetto (e2e)', () => {
     it('commande d’un autre utilisateur : 404 en lecture, paiements et remboursement', async () => {
       visiteur2 = await Client.anonymous(app);
       await visiteur2.post('/auth/register', { email: email('visiteur2'), password: TEST_PASSWORD, prenom: 'V', nom: 'Deux' });
+      await visiteur2.post('/auth/login', { email: email('visiteur2'), password: TEST_PASSWORD });
       expect((await visiteur2.get(`/orders/${commande}`)).statusCode).toBe(404);
       expect((await visiteur2.get(`/orders/${commande}/payments`)).statusCode).toBe(404);
       expect((await visiteur2.post(`/orders/${commande}/refund`)).statusCode).toBe(404);
@@ -386,9 +620,7 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('un admin rembourse la commande d’un autre utilisateur', async () => {
-      const achat = await visiteur2.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 });
-      expect(achat.statusCode).toBe(201);
-      const id = achat.json().commandeId;
+      const { commandeId: id } = await buy(app, gateway, visiteur2, fx.tarifQuota5, 1);
       expect((await admin.get(`/orders/${id}`)).json().utilisateurId).toBeGreaterThan(0);
       const res = await admin.post(`/orders/${id}/refund`);
       expect(res.statusCode).toBe(200);
@@ -407,6 +639,7 @@ describe('API Billetto (e2e)', () => {
     const inscrit = async (name: string) => {
       const client = await Client.anonymous(app);
       await client.post('/auth/register', { email: email(name), password: TEST_PASSWORD, prenom: 'W', nom: name });
+      await client.post('/auth/login', { email: email(name), password: TEST_PASSWORD });
       return client;
     };
     const mine = async (client: Client, id: number) =>
@@ -422,9 +655,7 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('tarif complet : inscriptions FIFO, double inscription → 409', async () => {
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifAttente, quantite: 1 });
-      expect(achat.statusCode).toBe(201);
-      commande = achat.json().commandeId;
+      commande = (await buy(app, gateway, visiteur, fx.tarifAttente, 1)).commandeId;
 
       const r1 = await attente1.post('/waitlist', { tarifId: fx.tarifAttente, quantite: 1 });
       expect(r1.statusCode).toBe(201);
@@ -456,25 +687,30 @@ describe('API Billetto (e2e)', () => {
       expect(await mine(attente1, entree1)).toMatchObject({ statut: 'notifiee', expireA: expect.any(String) });
       expect(await mine(attente2, entree2)).toMatchObject({ statut: 'en_attente', position: 1 });
 
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifAttente, quantite: 1 });
+      const achat = await visiteur.post('/orders/hold', { tarifId: fx.tarifAttente, quantite: 1, modePaiement: 'carte' });
       expect(achat.statusCode).toBe(409);
       expect(achat.json().error).toBe('QUOTA_EPUISE');
-      expect((await attente2.post(`/waitlist/${entree1}/confirm`)).statusCode).toBe(403);
+      // L'offre est une réservation au nom du premier inscrit : un autre ne peut pas la payer.
+      const offre: number = (await mine(attente1, entree1)).reservationId;
+      expect(offre).toEqual(expect.any(Number));
+      expect((await attente2.post(`/orders/holds/${offre}/checkout`)).statusCode).toBe(404);
+      // Un inscrit encore en attente n'a aucune réservation à payer.
+      expect((await mine(attente2, entree2)).reservationId).toBeNull();
     });
 
-    it('offre refusée → passe au suivant, qui confirme et obtient son billet', async () => {
+    it('offre refusée → passe au suivant, qui paie et obtient son billet', async () => {
       expect((await attente1.delete(`/waitlist/${entree1}`)).statusCode).toBe(204);
-      expect(await mine(attente1, entree1)).toMatchObject({ statut: 'annulee' });
-      expect(await mine(attente2, entree2)).toMatchObject({ statut: 'notifiee' });
+      expect(await mine(attente1, entree1)).toMatchObject({ statut: 'annulee', reservationId: null });
+      const offre = await mine(attente2, entree2);
+      expect(offre).toMatchObject({ statut: 'notifiee', reservationId: expect.any(Number) });
 
-      const res = await attente2.post(`/waitlist/${entree2}/confirm`);
-      expect(res.statusCode).toBe(200);
-      expect(res.json().billetIds).toHaveLength(1);
+      const achat = await payHold(app, gateway, attente2, offre.reservationId);
+      expect(achat.billetIds).toHaveLength(1);
       expect(await mine(attente2, entree2)).toMatchObject({ statut: 'confirmee' });
 
-      const again = await attente2.post(`/waitlist/${entree2}/confirm`);
+      const again = await attente2.post(`/orders/holds/${offre.reservationId}/checkout`);
       expect(again.statusCode).toBe(409);
-      expect(again.json().error).toBe('OFFRE_INACTIVE');
+      expect(again.json().error).toBe('RESERVATION_NON_ACTIVE');
     });
   });
 
@@ -491,9 +727,7 @@ describe('API Billetto (e2e)', () => {
     });
 
     it('billets : QR signé exposé au titulaire', async () => {
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifCheckin, quantite: 2 });
-      expect(achat.statusCode).toBe(201);
-      const ids: number[] = achat.json().billetIds;
+      const ids = (await buy(app, gateway, visiteur, fx.tarifCheckin, 2)).billetIds;
       const tickets = (await visiteur.get('/tickets/me?pageSize=100')).json().items;
       [qr1, qr2] = ids.map((id) => tickets.find((t: { id: number }) => t.id === id).qrPayload);
       expect(qr1).toMatch(/^BT1\.[0-9a-f-]{36}\.[A-Za-z0-9_-]{22}$/);
@@ -585,7 +819,7 @@ describe('API Billetto (e2e)', () => {
       const avant = futur(await liveOf(orgaA));
       if (!avant) throw new Error('événement de test absent du dashboard live');
 
-      expect((await visiteur.post('/tickets/purchase', { tarifId: fx.tarifLive, quantite: 2 })).statusCode).toBe(201);
+      await buy(app, gateway, visiteur, fx.tarifLive, 2);
       expect((await visiteur.post('/orders/hold', { tarifId: fx.tarifLive, quantite: 1, modePaiement: 'virement' })).statusCode).toBe(201);
 
       const apres = futur(await liveOf(orgaA));
@@ -619,18 +853,15 @@ describe('API Billetto (e2e)', () => {
   // ---------------------------------------------------------------------------
   describe('souhaits secondaires (phase 15)', () => {
     it('achat : e-mail de confirmation mis en file (outbox) dans la même transaction', async () => {
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifQuota5, quantite: 1 });
-      expect(achat.statusCode).toBe(201);
+      const achat = await buy(app, gateway, visiteur, fx.tarifQuota5, 1);
       const [row] = await owner.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM emails_sortants
-        WHERE type = 'commande_confirmee' AND commande_id = ${achat.json().commandeId}::bigint AND statut = 'a_envoyer'`;
+        WHERE type = 'commande_confirmee' AND commande_id = ${achat.commandeId}::bigint AND statut = 'a_envoyer'`;
       expect(Number(row?.n)).toBe(1);
     });
 
     it('annulation self-service : date limite exposée, refusée après le délai (409)', async () => {
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifProche, quantite: 1 });
-      expect(achat.statusCode).toBe(201);
-      const id = achat.json().commandeId;
+      const { commandeId: id } = await buy(app, gateway, visiteur, fx.tarifProche, 1);
 
       const detail = (await visiteur.get(`/orders/${id}`)).json();
       expect(new Date(detail.annulationPossibleJusqua).getTime()).toBeLessThan(Date.now());
@@ -666,8 +897,8 @@ describe('API Billetto (e2e)', () => {
       });
 
       // Délai ramené à 2 h : l'annulation redevient possible.
-      const achat = await visiteur.post('/tickets/purchase', { tarifId: fx.tarifProche, quantite: 1 });
-      expect((await visiteur.post(`/orders/${achat.json().commandeId}/refund`)).statusCode).toBe(200);
+      const achat = await buy(app, gateway, visiteur, fx.tarifProche, 1);
+      expect((await visiteur.post(`/orders/${achat.commandeId}/refund`)).statusCode).toBe(200);
     });
 
     it('export CSV des participants : en-têtes, un billet par ligne, accès restreint', async () => {
@@ -676,13 +907,15 @@ describe('API Billetto (e2e)', () => {
       expect(res.headers['content-type']).toMatch(/^text\/csv; charset=utf-8/);
       expect(res.headers['content-disposition']).toBe(`attachment; filename="participants-e2e-proche-${RUN}.csv"`);
       const lines = res.body.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
-      expect(lines[0]).toBe('billet;code;tarif;prix_paye;prenom;nom;commande;statut_commande;achete_le;scanne;scanne_le');
+      // Pas de code de billet dans l'export : un fichier qui circule ne permet pas de refaire un QR.
+      expect(lines[0]).toBe('billet;tarif;prix_paye;prenom;nom;commande;statut_commande;achete_le;scanne;scanne_le');
+      expect(res.body).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
 
       const [base] = await owner.$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM billets b JOIN tarifs t ON t.id = b.tarif_id WHERE t.evenement_id = ${fx.eventProche}`;
       expect(lines).toHaveLength(Number(base?.n) + 1);
-      expect(lines.slice(1).every((l) => l.split(';').length === 11)).toBe(true);
-      expect(lines.slice(1).map((l) => l.split(';')[7])).toEqual(expect.arrayContaining(['refunded']));
+      expect(lines.slice(1).every((l) => l.split(';').length === 10)).toBe(true);
+      expect(lines.slice(1).map((l) => l.split(';')[6])).toEqual(expect.arrayContaining(['refunded']));
 
       expect((await orgaB.get(`/events/${fx.eventProche}/participants/export`)).statusCode).toBe(403);
       expect((await visiteur.get(`/events/${fx.eventProche}/participants/export`)).statusCode).toBe(403);
@@ -844,13 +1077,13 @@ describe('API Billetto (e2e)', () => {
       expect(res.body).toContain('"auteur"');
       expect(res.statusCode).toBe(200);
       expect(res.json()).toContainEqual(
-        expect.objectContaining({ action: 'UPDATE', ancienPrix: '30.00', nouveauPrix: '35.50', auteur: 'demo-organisateur@billetto.test' }),
+        expect.objectContaining({ action: 'UPDATE', ancienPrix: '30.00', nouveauPrix: '35.50', auteur: fx.userOrgaA }),
       );
       expect((await orgaA.get('/analytics/price-audit')).statusCode).toBe(403);
     });
 
     it('utilisateurs : e-mails visibles de l’admin seulement', async () => {
-      const res = await admin.get(`/users?q=${encodeURIComponent('demo-')}`);
+      const res = await admin.get(`/users?q=${encodeURIComponent('e2e-')}`);
       expect(res.statusCode).toBe(200);
       expect(res.json().items[0]).toHaveProperty('email');
       expect(JSON.stringify(res.json())).not.toMatch(/argon2|password/i);
@@ -927,7 +1160,7 @@ describe('API Billetto (e2e)', () => {
 
       const res = await visiteur.post(`/events/${fx.eventFutur}/avis`, { note: 4, titre: 'Bien', commentaire: 'Très bonne soirée' });
       expect(res.statusCode).toBe(201);
-      expect(res.json()).toMatchObject({ evenementId: fx.eventFutur, note: 4, prenom: 'Camille', utile: 0 });
+      expect(res.json()).toMatchObject({ evenementId: fx.eventFutur, note: 4, prenom: 'Camille', utile: 0, estLeMien: true });
       avisId = res.json().id;
 
       const doublon = await visiteur.post(`/events/${fx.eventFutur}/avis`, { note: 1, commentaire: 'Encore' });
@@ -944,6 +1177,12 @@ describe('API Billetto (e2e)', () => {
         stats: { nbAvis: 1, moyenne: 4, distribution: { '1': 0, '2': 0, '3': 0, '4': 1, '5': 0 }, tauxReponse: 0 },
       });
       expect((await anonyme.get(`/events/${fx.eventFutur}/avis?noteMin=5`)).json().total).toBe(0);
+
+      // L'identifiant de l'auteur n'est jamais exposé ; seul l'auteur connecté voit « estLeMien ».
+      expect(res.body).not.toContain('utilisateurId');
+      expect(res.json().items[0].estLeMien).toBe(false);
+      expect((await visiteur.get(`/events/${fx.eventFutur}/avis`)).json().items[0].estLeMien).toBe(true);
+      expect((await visiteur2.get(`/events/${fx.eventFutur}/avis`)).json().items[0].estLeMien).toBe(false);
     });
 
     it('modification par l’auteur seulement ; réponse de l’organisateur propriétaire seulement', async () => {
@@ -964,9 +1203,28 @@ describe('API Billetto (e2e)', () => {
     it('journal d’activité : écriture explicite, tendances croisées avec PostgreSQL, série de l’organisateur', async () => {
       const mongo = app.get(MongoService);
       const avant = await mongo.activites.countDocuments({ evenementId: fx.eventFutur });
-      const rec = await anonyme.post('/activites', { type: 'vue_evenement', evenementId: fx.eventFutur, payload: { source: 'e2e' } });
+      // Écriture réservée aux comptes connectés, pour un événement visible, avec un contenu borné.
+      expect((await anonyme.post('/activites', { type: 'vue_evenement', evenementId: fx.eventFutur })).statusCode).toBe(401);
+      const rec = await visiteur.post('/activites', { type: 'vue_evenement', evenementId: fx.eventFutur, payload: { source: 'e2e' } });
       expect(rec.statusCode).toBe(201);
-      expect((await anonyme.post('/activites', { type: 'scan_checkin', evenementId: fx.eventFutur })).statusCode).toBe(400);
+      expect((await visiteur.post('/activites', { type: 'scan_checkin', evenementId: fx.eventFutur })).statusCode).toBe(400);
+      expect((await visiteur.post('/activites', { type: 'vue_evenement', evenementId: fx.eventDraftB })).statusCode).toBe(404);
+      expect((await visiteur.post('/activites', { type: 'vue_evenement', evenementId: 999_999_999 })).statusCode).toBe(404);
+      expect((await visiteur.post('/activites', { type: 'recherche', payload: { $where: 'x' } })).statusCode).toBe(400);
+      expect((await visiteur.post('/activites', { type: 'recherche', payload: { 'a.b': 'x' } })).statusCode).toBe(400);
+      const tropDeCles = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`cle${i}`, i]));
+      expect((await visiteur.post('/activites', { type: 'recherche', payload: tropDeCles })).statusCode).toBe(400);
+
+      // Ce qu'un navigateur déclare ne compte pas dans le classement : 50 « vues » déclarées n'y changent rien.
+      const scoreDe = async () =>
+        ((await anonyme.get('/events/tendances?jours=7&limit=50')).json() as { evenementId: number; score: number }[]).find(
+          (i) => i.evenementId === fx.eventFutur,
+        )?.score ?? 0;
+      const scoreAvant = await scoreDe();
+      await Promise.all(
+        Array.from({ length: 50 }, () => visiteur.post('/activites', { type: 'vue_evenement', evenementId: fx.eventFutur })),
+      );
+      expect(await scoreDe()).toBe(scoreAvant);
       // Les lectures précédentes (GET /events/:id) et l'achat ont aussi été journalisés par l'API.
       expect(await mongo.activites.countDocuments({ evenementId: fx.eventFutur })).toBeGreaterThan(avant);
 
@@ -1002,18 +1260,39 @@ describe('API Billetto (e2e)', () => {
 
   // ---------------------------------------------------------------------------
   describe('concurrence', () => {
-    it('30 achats simultanés sur un quota de 10 → exactement 10 ventes', async () => {
+    it('30 réservations simultanées sur un quota de 5 → exactement 5 places bloquées', async () => {
       const results = await Promise.all(
-        Array.from({ length: 30 }, () => visiteur.post('/tickets/purchase', { tarifId: fx.tarifConcurrence, quantite: 1 })),
+        Array.from({ length: 30 }, () =>
+          visiteur.post('/orders/hold', { tarifId: fx.tarifConcurrence, quantite: 1, modePaiement: 'carte' }),
+        ),
       );
       const statuses = results.map((r) => r.statusCode);
-      expect(statuses.filter((s) => s === 201)).toHaveLength(10);
-      expect(statuses.filter((s) => s === 409)).toHaveLength(20);
+      expect(statuses.filter((s) => s === 201)).toHaveLength(5);
+      expect(statuses.filter((s) => s === 409)).toHaveLength(25);
       expect(results.filter((r) => r.statusCode === 409).every((r) => r.json().error === 'QUOTA_EPUISE')).toBe(true);
 
-      const [{ vendus }] = await owner.$queryRaw<{ vendus: bigint }[]>`
-        SELECT count(*) AS vendus FROM billets WHERE tarif_id = ${fx.tarifConcurrence}`;
-      expect(Number(vendus)).toBe(10);
+      const [{ reserves }] = await owner.$queryRaw<{ reserves: bigint }[]>`
+        SELECT coalesce(sum(quantite), 0) AS reserves FROM reservations
+        WHERE tarif_id = ${fx.tarifConcurrence} AND statut = 'active'`;
+      expect(Number(reserves)).toBe(5);
+    });
+
+    it('webhooks simultanés pour le même paiement → une seule commande', async () => {
+      const [mine] = (await visiteur.get('/orders/holds/me')).json().filter(
+        (h: { tarifId: number; statut: string }) => h.tarifId === fx.tarifConcurrence && h.statut === 'active',
+      );
+      const checkout = await visiteur.post(`/orders/holds/${mine.id}/checkout`);
+      const sessionId = sessionIdOf(checkout.json().url);
+      gateway.pay(sessionId);
+      const eventId = `evt_e2e_conc_${RUN}`;
+      const results = await Promise.all(Array.from({ length: 10 }, () => deliverWebhook(app, sessionId, { eventId })));
+      expect(results.every((r) => r.statusCode === 200)).toBe(true);
+      expect(results.filter((r) => r.json().resultat === 'traite')).toHaveLength(1);
+      expect(results.filter((r) => r.json().resultat === 'doublon')).toHaveLength(9);
+
+      const [{ billets }] = await owner.$queryRaw<{ billets: bigint }[]>`
+        SELECT count(*) AS billets FROM billets WHERE tarif_id = ${fx.tarifConcurrence}`;
+      expect(Number(billets)).toBe(1);
     });
   });
 });

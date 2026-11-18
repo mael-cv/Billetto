@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import {
   CancelWaitlistUseCase,
-  ConfirmWaitlistUseCase,
   JoinWaitlistUseCase,
   ListMyWaitlistUseCase,
   TarifWaitlistUseCase,
@@ -15,7 +14,6 @@ import { WaitlistController } from './presentation/waitlist.controller';
   providers: [
     JoinWaitlistUseCase,
     ListMyWaitlistUseCase,
-    ConfirmWaitlistUseCase,
     CancelWaitlistUseCase,
     TarifWaitlistUseCase,
     { provide: WAITLIST_REPOSITORY, useClass: PrismaWaitlistRepository },

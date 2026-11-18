@@ -19,10 +19,13 @@ repo_root: ../..
 # Comptes de test. JAMAIS de vrais credentials : comptes de démo seedés.
 accounts:
   password_env: DEMO_PASSWORD
-  password_default: Billetto-Demo-2026!
-  user_a: demo-visiteur@billetto.test
-  organizer: demo-organisateur@billetto.test
-  admin: demo-admin@billetto.test
+  # Aucun mot de passe par défaut : variable d'environnement à fournir pour les comptes ci-dessous.
+  password_default: ""
+  # Aucun compte prédéfini dans l'application : renseigner ici des comptes créés
+  # pour l'audit (visiteur, organisateur, administrateur de l'instance testée).
+  user_a: ""
+  organizer: ""
+  admin: ""
   # USER_B est inscrit à chaud via POST /auth/register (rôle visitor).
   user_b_prefix: pentest-userb
 

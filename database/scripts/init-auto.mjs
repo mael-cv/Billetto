@@ -1,113 +1,123 @@
-// Script d'initialisation et de vérification automatique au démarrage.
-// Applique les migrations SQL, vérifie si les seeds SQL et MongoDB sont nécessaires,
-// et peuple les données si la base est vierge.
+// Initialisation au démarrage (conteneur « init », ou « pnpm db:init » en développement) :
+//   - certificat TLS auto-signé du front (si TLS_CERT_DIR est défini) ;
+//   - migrations SQL ;
+//   - schéma MongoDB (validateurs, index) et compte MongoDB restreint de l'API.
+// Aucune donnée n'est chargée ici : le jeu de démonstration dépend du mode choisi
+// dans l'assistant de premier démarrage (voir seeder.mjs). En développement,
+// « --seed » charge le jeu de démonstration si la base est vide.
+// security-audit-ignore: child-process -- spawnSync avec argv constant (openssl), aucune entrée externe
+import { spawnSync } from 'node:child_process';
+import { chownSync, chmodSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { MongoClient } from 'mongodb';
 import { psql } from './psql.mjs';
 import { applySchema } from '../nosql/schema.mjs';
 
+const withSeed = process.argv.includes('--seed');
 const started = Date.now();
 console.log('====================================================');
-console.log('🚀 BILLETTO — Vérification de l\'initialisation');
+console.log('BILLETTO — initialisation');
 console.log('====================================================');
-if ((process.env.POSTGRES_PASSWORD ?? '') === 'billetto_owner_pass') {
-  console.warn('⚠️  Secrets PAR DÉFAUT de docker-compose.yml en usage : réservés à la démonstration. Créez un .env (voir .env.example) pour tout autre usage.');
-}
 
-// 1. Attente active de PostgreSQL
-console.log('» 1/4 Attente de la base PostgreSQL...');
-let pgReady = false;
-for (let i = 0; i < 30; i++) {
-  try {
-    const res = psql(['-c', 'SELECT 1;'], { capture: true });
-    if (res.includes('1')) {
-      pgReady = true;
-      break;
+// Certificat TLS auto-signé du front (volume partagé avec nginx). Créé une seule fois.
+const certDir = process.env.TLS_CERT_DIR;
+if (certDir) {
+  const crt = join(certDir, 'billetto.crt');
+  const key = join(certDir, 'billetto.key');
+  if (!existsSync(crt) || !existsSync(key)) {
+    const res = spawnSync(
+      'openssl',
+      ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '365', '-subj', '/CN=localhost',
+        '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1', '-keyout', key, '-out', crt],
+      { stdio: ['ignore', 'ignore', 'inherit'] },
+    );
+    if (res.status !== 0) {
+      console.error('✗ Génération du certificat TLS impossible.');
+      process.exit(1);
     }
-  } catch {
-    // attendre 1s
-    await new Promise((r) => setTimeout(r, 1000));
+    // nginx tourne sous l'uid 101 (image non-root) : lui seul lit la clé privée.
+    chownSync(crt, 101, 101);
+    chownSync(key, 101, 101);
+    chmodSync(key, 0o400);
+    console.log('✓ Certificat TLS auto-signé créé (valable 365 jours).');
   }
 }
-if (!pgReady) {
-  console.error('❌ Impossible de joindre PostgreSQL après 30 secondes.');
+
+async function retry(label, attempt, tries = 30) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await attempt();
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  console.error(`✗ ${label} injoignable après ${tries} secondes.`);
   process.exit(1);
 }
-console.log('✓ PostgreSQL est prêt.');
 
-// 2. Application des migrations SQL
-console.log('» 2/4 Vérification des migrations PostgreSQL...');
+// 1. PostgreSQL : attente puis migrations
+console.log('» PostgreSQL : attente…');
+await retry('PostgreSQL', () => {
+  if (!psql(['-c', 'SELECT 1;'], { capture: true }).includes('1')) throw new Error('pas prêt');
+});
+console.log('» PostgreSQL : migrations…');
 try {
   await import('./migrate.mjs');
 } catch (err) {
-  console.error('❌ Erreur lors des migrations SQL :', err.message);
+  console.error('✗ Migrations SQL :', err.message);
   process.exit(1);
 }
 
-// 3. Vérification des données relationnelles (Seed PostgreSQL)
-console.log('» 3/4 Vérification des données de la billetterie...');
-let userCount = 0;
-try {
-  const out = psql(['-At', '-c', 'SELECT count(*) FROM utilisateurs;'], { capture: true });
-  userCount = parseInt(out.trim(), 10) || 0;
-} catch {
-  userCount = 0;
-}
-
-if (userCount === 0) {
-  console.log('» Base PostgreSQL vierge : exécution du seed small et des comptes de démo...');
-  try {
+// 2. Jeu de démonstration (développement uniquement, base vide)
+if (withSeed) {
+  const events = parseInt(psql(['-At', '-c', 'SELECT count(*) FROM evenements;'], { capture: true }).trim(), 10) || 0;
+  if (events === 0) {
+    console.log('» Base vide : chargement du jeu de démonstration…');
     process.argv[2] = 'small';
     await import('./seed.mjs');
-    console.log('✓ Seed PostgreSQL et comptes de démo créés.');
-  } catch (err) {
-    console.error('❌ Erreur lors du seed PostgreSQL :', err.message);
-    process.exit(1);
-  }
-} else {
-  console.log(`✓ PostgreSQL déjà initialisé (${userCount} utilisateurs trouvés) : seed ignoré.`);
-}
-
-// 4. Base documentaire MongoDB : schéma (validateurs + index) puis peuplement si vide.
-//    Le seed NoSQL lit les identifiants dans PostgreSQL : il s'exécute toujours après le seed SQL.
-console.log('» 4/4 Vérification de la base NoSQL MongoDB...');
-const mongoUrl =
-  process.env.MONGO_URL ??
-  'mongodb://billetto_mongo:billetto_mongo_pass@mongodb:27017/billetto_nosql?authSource=admin';
-
-let mongoClient = null;
-for (let i = 0; i < 30; i++) {
-  try {
-    mongoClient = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 2000 });
-    await mongoClient.connect();
-    await mongoClient.db().admin().ping();
-    break;
-  } catch {
-    mongoClient = null;
-    await new Promise((r) => setTimeout(r, 1000));
+  } else {
+    console.log(`✓ PostgreSQL déjà peuplé (${events} événements).`);
   }
 }
-if (!mongoClient) {
-  console.error('❌ Impossible de joindre MongoDB après 30 secondes.');
+
+// 3. MongoDB : schéma et compte applicatif restreint
+const mongoUrl = process.env.MONGO_URL;
+if (!mongoUrl) {
+  console.error('✗ MONGO_URL absent de la configuration.');
   process.exit(1);
 }
+console.log('» MongoDB : attente…');
+const mongoClient = await retry('MongoDB', async () => {
+  const client = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 2000 });
+  await client.connect();
+  await client.db().admin().ping();
+  return client;
+});
 try {
   const db = mongoClient.db();
   await applySchema(db);
+
+  // L'API ne se connecte jamais en root MongoDB : readWrite sur sa seule base.
+  const appUser = process.env.MONGO_APP_USER;
+  const appPassword = process.env.MONGO_APP_PASSWORD;
+  if (!appUser || !appPassword) throw new Error('MONGO_APP_USER / MONGO_APP_PASSWORD absents de la configuration');
+  const roles = [{ role: 'readWrite', db: db.databaseName }];
+  const { users } = await db.command({ usersInfo: appUser });
+  await db.command(
+    users.length > 0 ? { updateUser: appUser, pwd: appPassword, roles } : { createUser: appUser, pwd: appPassword, roles },
+  );
+  console.log(`✓ Compte MongoDB applicatif : readWrite sur ${db.databaseName} uniquement.`);
+
   const pages = await db.collection('event_pages').countDocuments();
   await mongoClient.close();
-  if (pages === 0) {
-    console.log('» Base MongoDB vierge : seed NoSQL (templates, pages, avis, activités)...');
+  if (withSeed && pages === 0) {
+    console.log('» MongoDB vide : chargement du jeu de démonstration…');
     await import('../nosql/seed-nosql.mjs');
-  } else {
-    console.log(`✓ MongoDB déjà initialisé (${pages} pages d'événement) : seed ignoré.`);
   }
 } catch (err) {
-  console.error('❌ Erreur lors de l\'initialisation MongoDB :', err.message);
+  console.error('✗ Initialisation MongoDB :', err.message);
   process.exit(1);
 }
 
-console.log('====================================================');
-console.log(`✓ Initialisation complète terminée en ${((Date.now() - started) / 1000).toFixed(1)} s.`);
-console.log('✓ Tous les services sont prêts à démarrer.');
-console.log('====================================================');
+console.log(`✓ Initialisation terminée en ${((Date.now() - started) / 1000).toFixed(1)} s.`);
 process.exit(0);

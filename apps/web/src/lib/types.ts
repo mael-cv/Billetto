@@ -135,14 +135,20 @@ export interface Venue {
   capacite: number;
 }
 
-export interface PurchaseResult {
-  commandeId: number;
-  paiementId: number;
-  billetIds: number[];
-  montantTotal: string;
-}
-
 export type ModePaiement = "carte" | "virement";
+
+// Premier démarrage (assistant d'installation)
+export type SetupMode = "test" | "live";
+export interface SetupStatus {
+  etat: "requis" | "en_cours" | "pret";
+  mode: SetupMode | null;
+}
+export interface SetupInput {
+  jeton: string;
+  mode: SetupMode;
+  stripe?: { secretKey: string; webhookSecret: string };
+  admin: { email: string; password: string; prenom: string; nom: string };
+}
 export type ReservationStatus = "active" | "confirmee" | "expiree" | "annulee";
 
 export interface Reservation {
@@ -153,6 +159,32 @@ export interface Reservation {
   modePaiement: ModePaiement;
   expireA: string;
   montantTotal: string;
+}
+
+/** Réservation vue par son auteur : état courant et, une fois payée, la commande créée. */
+export interface HoldView extends Reservation {
+  tarif: string | null;
+  evenementId: number | null;
+  evenement: string | null;
+  commandeId: number | null;
+  createdAt: string;
+}
+
+/** Suite du paiement par carte : redirection vers le prestataire, ou confirmation directe (montant nul). */
+export type CheckoutResult =
+  | { statut: "paiement"; url: string }
+  | { statut: "confirmee"; commandeId: number; billetIds: number[] };
+
+/** Virement attendu sur un événement de l'organisateur (aucune donnée personnelle de l'acheteur). */
+export interface PendingTransfer {
+  id: number;
+  tarif: string;
+  evenementId: number;
+  evenement: string;
+  quantite: number;
+  montantTotal: string;
+  expireA: string;
+  createdAt: string;
 }
 
 export interface OrderTicket {
@@ -279,6 +311,8 @@ export interface WaitlistEntry extends WaitlistQueueItem {
   tarif: string;
   evenementId: number;
   evenement: string;
+  /** Réservation de l'offre en cours (statut notifiee), à régler comme tout autre hold. */
+  reservationId: number | null;
 }
 
 export type ScanResult = "ok" | "doublon" | "invalide" | "annule" | "mauvais_evenement";
@@ -373,7 +407,8 @@ export interface EventPageView {
 export interface Review {
   id: string;
   evenementId: number;
-  utilisateurId: number;
+  /** Vrai pour l'auteur connecté (l'identifiant de l'auteur n'est pas exposé). */
+  estLeMien: boolean;
   prenom: string;
   note: number;
   titre?: string;
@@ -453,7 +488,8 @@ export interface EventPageView {
 export interface Review {
   id: string;
   evenementId: number;
-  utilisateurId: number;
+  /** Vrai pour l'auteur connecté (l'identifiant de l'auteur n'est pas exposé). */
+  estLeMien: boolean;
   prenom: string;
   note: number;
   titre?: string;

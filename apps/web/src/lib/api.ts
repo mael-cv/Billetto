@@ -16,7 +16,11 @@ import type {
   Page,
   Payment,
   PriceAuditEntry,
-  PurchaseResult,
+  CheckoutResult,
+  SetupInput,
+  SetupStatus,
+  HoldView,
+  PendingTransfer,
   RecentOrder,
   Reservation,
   Role,
@@ -83,12 +87,16 @@ export interface PriceInput {
 }
 
 export const api = {
+  // Premier démarrage
+  setupStatus: () => http<SetupStatus>("GET", "/setup/status"),
+  submitSetup: (body: SetupInput) => http<SetupStatus>("POST", "/setup", { body }),
+
   // Authentification
   me: () => http<{ user: User }>("GET", "/auth/me").then((r) => r.user),
   login: (email: string, password: string) =>
     http<{ user: User }>("POST", "/auth/login", { body: { email, password } }).then((r) => r.user),
   register: (body: { email: string; password: string; prenom: string; nom: string }) =>
-    http<{ user: User }>("POST", "/auth/register", { body }).then((r) => r.user),
+    http<{ message: string }>("POST", "/auth/register", { body }),
   logout: () => http<void>("POST", "/auth/logout"),
   changePassword: (currentPassword: string, newPassword: string) =>
     http<void>("POST", "/auth/password", { body: { currentPassword, newPassword } }),
@@ -113,23 +121,28 @@ export const api = {
   createPrice: (eventId: number, body: PriceInput) => http<TicketPrice>("POST", `/events/${eventId}/prices`, { body }),
 
   // Achat et commandes
-  purchase: (tarifId: number, quantite: number) =>
-    http<PurchaseResult>("POST", "/tickets/purchase", { body: { tarifId, quantite } }),
-  // Réservation temporaire (hold) : bloque le quota, à confirmer avant expiration.
+  // Réservation temporaire (hold) : bloque le quota le temps du paiement. Les billets
+  // ne sont émis qu'après paiement vérifié par l'API (webhook) ou virement validé.
   hold: (tarifId: number, quantite: number, modePaiement: ModePaiement) =>
     http<Reservation>("POST", "/orders/hold", { body: { tarifId, quantite, modePaiement } }),
-  confirmHold: (reservationId: number) => http<PurchaseResult>("POST", `/orders/${reservationId}/confirm`),
+  checkoutHold: (reservationId: number) => http<CheckoutResult>("POST", `/orders/holds/${reservationId}/checkout`),
+  holdStatus: (reservationId: number) => http<HoldView>("GET", `/orders/holds/${reservationId}`),
+  myHolds: () => http<HoldView[]>("GET", "/orders/holds/me"),
+  cancelHold: (reservationId: number) => http<void>("DELETE", `/orders/holds/${reservationId}`),
+  // Organisateur : virements attendus sur ses événements, et validation à réception des fonds.
+  pendingTransfers: () => http<PendingTransfer[]>("GET", "/orders/holds/transfers"),
+  validateTransfer: (reservationId: number) =>
+    http<{ commandeId: number; billetIds: number[] }>("POST", `/orders/holds/${reservationId}/validate-transfer`),
   myTickets: (page = 1, pageSize = 100) => http<Page<MyTicket>>("GET", "/tickets/me", { query: { page, pageSize } }),
   myOrders: (page = 1, pageSize = 20) => http<Page<OrderSummary>>("GET", "/orders/me", { query: { page, pageSize } }),
   order: (id: number) => http<OrderDetail>("GET", `/orders/${id}`),
   orderPayments: (id: number) => http<Payment[]>("GET", `/orders/${id}/payments`),
   refund: (id: number) => http<OrderDetail>("POST", `/orders/${id}/refund`),
 
-  // Liste d'attente : une offre (statut notifiee) est une réservation à confirmer avant expireA.
+  // Liste d'attente : une offre (statut notifiee) est une réservation à régler avant expireA (checkoutHold).
   joinWaitlist: (tarifId: number, quantite: number) =>
     http<WaitlistEntry>("POST", "/waitlist", { body: { tarifId, quantite } }),
   myWaitlist: () => http<WaitlistEntry[]>("GET", "/waitlist/me"),
-  confirmWaitlist: (id: number) => http<PurchaseResult>("POST", `/waitlist/${id}/confirm`),
   cancelWaitlist: (id: number) => http<void>("DELETE", `/waitlist/${id}`),
   tarifWaitlist: (tarifId: number) => http<WaitlistQueueItem[]>("GET", `/waitlist/tarifs/${tarifId}`),
 

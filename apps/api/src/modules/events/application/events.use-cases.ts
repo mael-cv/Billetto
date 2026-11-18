@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Actor } from '../../../auth/domain/actor';
 import { toDbActor } from '../../../auth/domain/to-db-actor';
 import { ANONYMOUS, type DbActor, DbContextService } from '../../../common/database/db-context.service';
@@ -128,6 +128,8 @@ export class ReplaceEventAttributesUseCase {
 
 @Injectable()
 export class DeleteEventUseCase {
+  private readonly logger = new Logger(DeleteEventUseCase.name);
+
   constructor(
     private readonly db: DbContextService,
     @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
@@ -141,17 +143,22 @@ export class DeleteEventUseCase {
   async execute(actor: Actor, id: number): Promise<void> {
     const count = await this.db.run(toDbActor(actor), (tx) => this.events.delete(tx, id));
     if (count === 0) throw notFound('Événement');
-    await Promise.all([
+    // La suppression SQL est déjà validée : un échec du nettoyage documentaire
+    // est journalisé (documents orphelins sans effet), jamais renvoyé en erreur.
+    const results = await Promise.allSettled([
       this.mongo.eventPages.deleteOne({ evenementId: id }),
       this.mongo.avis.deleteMany({ evenementId: id }),
       this.mongo.activites.deleteMany({ evenementId: id }),
     ]);
+    const failures = results.filter((r) => r.status === 'rejected').length;
+    if (failures > 0) this.logger.warn(`événement ${id} supprimé, nettoyage MongoDB incomplet (${failures} échec(s))`);
   }
 }
 
+// Le code du billet n'est pas exporté : avec le manifeste de check-in, il
+// permettrait de reconstituer le QR de chaque participant à partir d'un simple fichier.
 const PARTICIPANT_HEADERS = [
   'billet',
-  'code',
   'tarif',
   'prix_paye',
   'prenom',
@@ -183,7 +190,6 @@ export class ExportParticipantsUseCase {
         PARTICIPANT_HEADERS,
         participants.map((p) => [
           p.billetId,
-          p.code,
           p.tarif,
           p.prixPaye,
           p.prenom,

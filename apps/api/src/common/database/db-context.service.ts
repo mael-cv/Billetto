@@ -19,6 +19,8 @@ const PG_ROLES: Record<AppRole, string> = {
   admin: 'billetto_admin',
 };
 
+const PAYMENT_ROLE = 'billetto_paiement';
+
 export const ANONYMOUS: DbActor = { userId: null, role: 'visitor' };
 
 /**
@@ -33,11 +35,23 @@ export class DbContextService {
   constructor(private readonly prisma: PrismaService) {}
 
   run<T>(actor: DbActor, work: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.withRole(PG_ROLES[actor.role], actor.userId, work);
+  }
+
+  /**
+   * Webhook de paiement vérifié : rôle billetto_paiement, sans utilisateur.
+   * Ce rôle n'a accès à aucune table ; il ne peut qu'exécuter traiter_paiement_webhook.
+   */
+  asPaymentProcessor<T>(work: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.withRole(PAYMENT_ROLE, null, work);
+  }
+
+  private withRole<T>(pgRole: string, userId: number | null, work: (tx: Tx) => Promise<T>): Promise<T> {
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`
-          SELECT set_config('role', ${PG_ROLES[actor.role]}, true),
-                 set_config('app.user_id', ${actor.userId === null ? '' : String(actor.userId)}, true)`;
+          SELECT set_config('role', ${pgRole}, true),
+                 set_config('app.user_id', ${userId === null ? '' : String(userId)}, true)`;
         return work(tx);
       },
       { maxWait: 10_000, timeout: 20_000 },

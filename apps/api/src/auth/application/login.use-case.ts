@@ -19,10 +19,17 @@ export class LoginUseCase {
   async execute(email: string, password: string): Promise<Actor> {
     const normalizedEmail = email.trim().toLowerCase();
     const stored = await this.credentials.findByEmail(normalizedEmail);
+    // Le hash est toujours vérifié (compte inconnu ou verrouillé compris) : temps de réponse constant.
     const valid = await this.hasher.verify(stored?.passwordHash ?? DUMMY_HASH, password);
 
-    // Même réponse pour « compte inconnu » et « mauvais mot de passe ».
-    if (!stored || !valid) throw unauthorized('Identifiants invalides');
+    // Même réponse pour « compte inconnu », « mauvais mot de passe » et « compte
+    // verrouillé » : rien ne distingue ces cas pour l'appelant.
+    if (!stored || stored.locked || !valid) {
+      // Un compte verrouillé ne compte plus les échecs : le verrou ne se prolonge pas indéfiniment.
+      if (stored && !stored.locked) await this.credentials.recordFailedLogin(normalizedEmail);
+      throw unauthorized('Identifiants invalides');
+    }
+    await this.credentials.resetFailedLogins(stored.userId);
 
     return {
       userId: stored.userId,

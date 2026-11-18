@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import type { Actor } from '../../../auth/domain/actor';
-import { Authenticated, CurrentActor, Public } from '../../../auth/presentation/auth.decorators';
+import { Authenticated, CurrentActor, OptionalAuth } from '../../../auth/presentation/auth.decorators';
 import { idSchema, type Pagination, paginationSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import { eventRefSchema } from '../../events/presentation/events.dto';
@@ -35,14 +35,16 @@ export class ReviewsController {
     private readonly listOrganizerReviews: ListOrganizerReviewsUseCase,
   ) {}
 
+  // Lecture publique ; l'identité, si elle est présente, sert uniquement à marquer « estLeMien ».
   @Get('events/:ref/avis')
-  @Public()
+  @OptionalAuth()
   list(
+    @CurrentActor() actor: Actor | null,
     @Param('ref', new ZodPipe(eventRefSchema)) ref: { id: number } | { slug: string },
     @Query(new ZodPipe(listReviewsQuerySchema)) query: ListReviewsQuery,
   ) {
     const { page, pageSize, ...filters } = query;
-    return this.listReviews.execute(ref, filters, { page, pageSize });
+    return this.listReviews.execute(ref, filters, { page, pageSize }, actor?.userId ?? null);
   }
 
   @Post('events/:id/avis')

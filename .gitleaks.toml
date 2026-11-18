@@ -1,0 +1,8 @@
+# Règles par défaut de gitleaks, avec une seule exception assumée : les clés
+# Stripe du MODE TEST, versionnées pour que le projet démarre sans saisie.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Clés Stripe de test versionnées volontairement (aucune clé réelle)"
+paths = ['''infra/stripe/test-keys\.env''']

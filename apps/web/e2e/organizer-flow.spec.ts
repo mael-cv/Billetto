@@ -1,40 +1,63 @@
 import { expect, test } from "@playwright/test";
+import { adminCredentials, ApiSession, createEvent, createOrganizer, goToCheckout, login, registerAndLogin } from "./support";
 
 test.describe("Parcours Organisateur", () => {
-  test("connexion organisateur, consultation tableau de bord (RLS) et gestion des événements", async ({ page }) => {
-    // 1. Connexion
-    await page.goto("/#/login");
-    await page.waitForSelector("#email");
-    await page.fill("#email", "demo-organisateur@billetto.test");
-    await page.fill("#password", "Billetto-Demo-2026!");
-    await page.click('button[type="submit"]');
+  test("tableau de bord (RLS), événements, et validation d'un virement reçu", async ({ page, browser }) => {
+    // Un événement et son organisateur (compte promu par l'administrateur).
+    const event = await createEvent("Parcours organisateur");
+    const organizer = await createOrganizer(event.organisateurId);
 
-    // Redirection automatique vers /organizer
-    await expect(page).toHaveURL(/\/#\/organizer/, { timeout: 10_000 });
+    // Un acheteur réserve par virement (autre session de navigateur).
+    const buyerContext = await browser.newContext({ ignoreHTTPSErrors: true });
+    const buyer = await buyerContext.newPage();
+    await registerAndLogin(buyer, "Bao", "Acheteur", "virement");
+    await goToCheckout(buyer, event.slug);
+    await buyer.locator('input[name="modePaiement"][value="virement"]').check();
+    await buyer.locator("#cgv").check();
+    await buyer.locator('button[type="submit"]').filter({ hasText: "Payer" }).first().click();
+    await expect(buyer).toHaveURL(/awaiting-transfer\?reservation=\d+/, { timeout: 15_000 });
+    const reservation = Number(/reservation=(\d+)/.exec(buyer.url())?.[1]);
 
-    // 2. Tableau de bord organisateur
+    // L'acheteur ne peut pas valider lui-même son virement.
+    const buyerApi = await buyer.request.post(`/api/v1/orders/holds/${reservation}/validate-transfer`, {
+      headers: { "x-csrf-token": (await buyerContext.cookies()).find((c) => c.name === "billetto_csrf")?.value ?? "" },
+    });
+    expect(buyerApi.status()).toBe(403);
+
+    // 1. Connexion de l'organisateur : redirection vers son espace
+    await login(page, organizer);
+    await expect(page).toHaveURL(/\/#\/organizer/, { timeout: 15_000 });
+
+    // 2. Tableau de bord : statistiques de ses événements uniquement
     await expect(page.locator("h1")).toContainText("Tableau de bord");
-    // Vérification de la présence des cartes de statistiques
-    const statsContainer = page.locator('[data-testid="stats"]');
-    await expect(statsContainer).toBeVisible({ timeout: 10_000 });
-    await expect(statsContainer).toContainText("Chiffre d'affaires");
-    await expect(statsContainer).toContainText("Billets vendus");
+    const stats = page.locator('[data-testid="stats"]');
+    await expect(stats).toBeVisible({ timeout: 15_000 });
+    await expect(stats).toContainText("Chiffre d'affaires");
 
-    // 3. Mes événements
+    // 3. Virement en attente : validation depuis le tableau de bord, billets émis
+    const row = page.getByTestId(`transfer-${reservation}`);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    page.once("dialog", (dialog) => void dialog.accept());
+    await row.getByRole("button", { name: "Valider le virement" }).click();
+    await expect(row).toBeHidden({ timeout: 15_000 });
+    await buyer.goto("/#/tickets");
+    await buyer.reload(); // la liste est mise en cache 30 s côté navigateur
+    await expect(buyer.locator("text=Valide").first()).toBeVisible({ timeout: 15_000 });
+    await buyerContext.close();
+
+    // 4. Mes événements
     await page.goto("/#/organizer/events");
     await expect(page.locator("h1")).toContainText("Mes événements");
+    await expect(page.locator('[data-testid="organizer-events"], table').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("text=Parcours organisateur").first()).toBeVisible();
 
-    // La table des événements de l'organisateur est chargée
-    const eventsTable = page.locator('[data-testid="organizer-events"], table');
-    await expect(eventsTable).toBeVisible({ timeout: 10_000 });
-
-    // 4. Action de publication / dépublication
-    const toggleBtn = page.locator('button:has-text("Publier"), button:has-text("Dépublier")').first();
-    if (await toggleBtn.isVisible()) {
-      const initialText = (await toggleBtn.textContent())?.trim();
-      await toggleBtn.click();
-      // Un toast ou un changement d'état s'affiche
-      await expect(page.locator('[role="status"], [data-testid="toast"]').first()).toBeVisible({ timeout: 5_000 });
-    }
+    // 5. Un organisateur d'un autre collectif ne voit ni l'événement ni le virement.
+    const other = await createEvent("Autre collectif", "Autre organisateur", event.organisateurId);
+    const rival = await ApiSession.loggedIn(await createOrganizer(other.organisateurId));
+    expect((await rival.call("PATCH", `/events/${event.id}`, { nom: "Piraté" })).status).toBe(404);
+    const transfers = (await rival.call("GET", "/orders/holds/transfers")).body as { evenementId: number }[];
+    expect(transfers.every((t) => t.evenementId !== event.id)).toBe(true);
+    await rival.dispose();
+    expect(adminCredentials().email).toContain("@");
   });
 });

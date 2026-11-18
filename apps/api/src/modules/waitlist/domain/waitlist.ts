@@ -1,5 +1,4 @@
 import type { Tx } from '../../../common/database/db-context.service';
-import type { ConfirmResult } from '../../orders/domain/order';
 
 export type WaitlistStatus = 'en_attente' | 'notifiee' | 'confirmee' | 'expiree' | 'annulee';
 
@@ -20,6 +19,8 @@ export interface WaitlistEntry extends WaitlistQueueItem {
   tarif: string;
   evenementId: number;
   evenement: string;
+  /** Réservation de l'offre en cours (statut notifiee) : à payer via /orders/holds/:id/checkout. */
+  reservationId: number | null;
 }
 
 export interface WaitlistRepository {
@@ -27,7 +28,6 @@ export interface WaitlistRepository {
   join(tx: Tx, userId: number, tarifId: number, quantite: number): Promise<number>;
   listForUser(tx: Tx, userId: number): Promise<WaitlistEntry[]>;
   findForUser(tx: Tx, userId: number, entryId: number): Promise<WaitlistEntry | null>;
-  confirm(tx: Tx, userId: number, entryId: number): Promise<ConfirmResult>;
   cancel(tx: Tx, userId: number, entryId: number): Promise<void>;
   /** Rôle organisateur (RLS : ses tarifs) ou admin. */
   queueForTarif(tx: Tx, tarifId: number): Promise<WaitlistQueueItem[]>;

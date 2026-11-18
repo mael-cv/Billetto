@@ -1,10 +1,15 @@
 import { Module } from '@nestjs/common';
 import {
-  ConfirmReservationUseCase,
+  CancelHoldUseCase,
+  CheckoutHoldUseCase,
+  GetHoldUseCase,
   GetOrderUseCase,
   HoldOrderUseCase,
+  ListMyHoldsUseCase,
   ListMyOrdersUseCase,
+  ListPendingTransfersUseCase,
   RefundOrderUseCase,
+  ValidateTransferUseCase,
 } from './application/orders.use-cases';
 import { ORDERS_REPOSITORY } from './domain/order';
 import { PrismaOrdersRepository } from './infrastructure/prisma-orders.repository';
@@ -18,7 +23,12 @@ import { OrdersController } from './presentation/orders.controller';
     GetOrderUseCase,
     RefundOrderUseCase,
     HoldOrderUseCase,
-    ConfirmReservationUseCase,
+    ListMyHoldsUseCase,
+    GetHoldUseCase,
+    CheckoutHoldUseCase,
+    CancelHoldUseCase,
+    ListPendingTransfersUseCase,
+    ValidateTransferUseCase,
     ReservationsPurgeJob,
     { provide: ORDERS_REPOSITORY, useClass: PrismaOrdersRepository },
   ],

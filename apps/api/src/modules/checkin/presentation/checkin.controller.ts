@@ -12,6 +12,7 @@ export const scanSchema = z.strictObject({
   payload: z.string().trim().min(1).max(200),
   evenementId: idSchema,
   // Heure du téléphone au moment du scan (peut être ancienne pour un rejeu offline).
+  // Indicative : scanner_billet la borne à [-7 j, +5 min], l'heure serveur fait foi.
   scanneA: z.coerce.date(),
   appareil: z.string().trim().max(100).optional(),
 });
@@ -50,11 +51,14 @@ export class CheckinController {
     const results = await this.scanBatch.execute(actor, body.scans);
     for (const [i, item] of results.entries()) {
       const scan = body.scans[i];
-      if (!scan) continue;
+      // Seuls les scans acceptés par la base sont journalisés : un scan refusé
+      // (événement d'un autre organisateur) ne doit laisser aucune trace dans
+      // les statistiques de cet événement.
+      if (!scan || item.status !== 'done') continue;
       this.activity.record('scan_checkin', {
         utilisateurId: actor.userId,
         evenementId: scan.evenementId,
-        payload: { resultat: item.status === 'done' ? item.resultat : 'erreur', appareil: scan.appareil ?? null, horsLigne: true },
+        payload: { resultat: item.resultat, appareil: scan.appareil ?? null, horsLigne: true },
       });
     }
     return results;

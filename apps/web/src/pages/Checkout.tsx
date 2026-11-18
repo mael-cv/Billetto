@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { api } from "../lib/api";
+import { followCheckout } from "../lib/checkout";
 import { useAuth } from "../lib/auth";
 import { ApiError, errorMessage } from "../lib/http";
 import { formatDate, formatEUR, formatTime } from "../lib/format";
@@ -29,9 +30,10 @@ export function CheckoutPage() {
   const queryClient = useQueryClient();
   const form = useForm<CheckoutForm>({ resolver: zodResolver(checkoutSchema) });
 
-  // Aucun calcul métier ici : creer_reservation()/confirmer_reservation()
-  // vérifient tarif, période, quota et calculent le montant. Le total affiché
-  // avant paiement est indicatif.
+  // Aucun calcul métier ici : creer_reservation() vérifie tarif, période, quota
+  // et fige le prix ; le montant à payer est calculé par l'API. Le total affiché
+  // avant paiement est indicatif. Les billets ne sont émis qu'une fois le
+  // paiement confirmé à l'API par le prestataire (webhook signé).
   const hold = useMutation({
     mutationFn: () => api.hold(cart!.tarifId, cart!.quantite, cart!.modePaiement),
     onSuccess: (reservation) => {
@@ -48,8 +50,8 @@ export function CheckoutPage() {
         );
         return;
       }
-      // Carte : paiement simulé quasi instantané, enchaîné automatiquement.
-      confirm.mutate(reservation.id);
+      // Carte : ouverture de la page de paiement du prestataire.
+      checkout.mutate(reservation.id);
     },
     onError: (error) => {
       if (error instanceof ApiError && cart) {
@@ -58,15 +60,15 @@ export function CheckoutPage() {
     },
   });
 
-  const confirm = useMutation({
-    mutationFn: (reservationId: number) => api.confirmHold(reservationId),
+  const checkout = useMutation({
+    mutationFn: (reservationId: number) => api.checkoutHold(reservationId),
     onSuccess: (result) => {
       const slug = cart?.eventSlug;
       setCart(null);
       void queryClient.invalidateQueries({ queryKey: ["me"] });
       if (slug) void queryClient.invalidateQueries({ queryKey: ["event", slug] });
-      toast("Paiement accepté, vos billets sont prêts", "success");
-      navigate(`/checkout/success?commande=${result.commandeId}`);
+      if (result.statut === "confirmee") toast("Réservation confirmée, vos billets sont prêts", "success");
+      followCheckout(result, navigate);
     },
     onError: (error) => {
       if (error instanceof ApiError && cart) {
@@ -76,11 +78,11 @@ export function CheckoutPage() {
   });
 
   const reservation: Reservation | undefined = hold.data && hold.data.modePaiement === "carte" ? hold.data : undefined;
-  const isPending = hold.isPending || confirm.isPending;
-  const error = hold.error ?? confirm.error;
+  const isPending = hold.isPending || checkout.isPending || checkout.isSuccess;
+  const error = hold.error ?? checkout.error;
   const reset = () => {
     hold.reset();
-    confirm.reset();
+    checkout.reset();
   };
   const submit = () => hold.mutate();
 
@@ -181,7 +183,7 @@ export function CheckoutPage() {
                     <span>
                       <span className="block font-medium">{mode === "carte" ? "Carte bancaire" : "Virement bancaire"}</span>
                       <span className="text-xs text-muted-foreground">
-                        {mode === "carte" ? "Réservation confirmée immédiatement" : "Réservation valable 72h, le temps du virement"}
+                        {mode === "carte" ? "Paiement sécurisé sur la page Stripe" : "Réservation valable 24 h, le temps du virement"}
                       </span>
                     </span>
                   </label>
@@ -194,10 +196,12 @@ export function CheckoutPage() {
               <Card className="flex items-start gap-3 p-5 text-sm">
                 <IconShield className="mt-0.5 size-5 shrink-0 text-success" />
                 <div>
-                  <div className="font-medium">Paiement simulé</div>
+                  <div className="font-medium">Paiement par Stripe (mode test)</div>
                   <p className="mt-1 text-muted-foreground">
-                    Environnement de démonstration : aucune donnée bancaire n'est demandée. Une réservation temporaire bloque
-                    d'abord vos places, puis est confirmée (paiement carte) dans le délai de sécurité affiché ci-dessous.
+                    Une réservation temporaire bloque d'abord vos places, puis vous êtes redirigé vers la page de paiement
+                    Stripe. Environnement de test : aucune carte réelle n'est débitée, utilisez la carte 4242 4242 4242 4242
+                    avec une date future et un cryptogramme quelconque. Vos billets sont émis dès que Stripe confirme le
+                    paiement.
                   </p>
                   {reservation && (
                     <div className="mt-3">
@@ -259,7 +263,7 @@ export function CheckoutPage() {
                 )}
 
                 <Button type="submit" size="lg" className="mt-5 w-full" loading={isPending}>
-                  {isPending ? "Paiement en cours…" : `Payer ${formatEUR(total)}`}
+                  {isPending ? "Redirection vers le paiement…" : `Payer ${formatEUR(total)}`}
                 </Button>
                 <p className="mt-3 text-center text-xs text-muted-foreground">
                   Remboursement possible jusqu'au début de l'événement.

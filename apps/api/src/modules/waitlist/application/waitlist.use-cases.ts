@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Actor } from '../../../auth/domain/actor';
 import { DbContextService } from '../../../common/database/db-context.service';
 import { notFound } from '../../../common/errors/http-errors';
-import type { ConfirmResult } from '../../orders/domain/order';
 import {
   WAITLIST_REPOSITORY,
   type WaitlistEntry,
@@ -39,19 +38,6 @@ export class ListMyWaitlistUseCase {
 
   execute(actor: Actor): Promise<WaitlistEntry[]> {
     return this.db.asBuyer(actor.userId, (tx) => this.waitlist.listForUser(tx, actor.userId));
-  }
-}
-
-@Injectable()
-export class ConfirmWaitlistUseCase {
-  constructor(
-    private readonly db: DbContextService,
-    @Inject(WAITLIST_REPOSITORY) private readonly waitlist: WaitlistRepository,
-  ) {}
-
-  /** Accepte l'offre (confirmer_liste_attente → confirmer_reservation). */
-  execute(actor: Actor, entryId: number): Promise<ConfirmResult> {
-    return this.db.asBuyer(actor.userId, (tx) => this.waitlist.confirm(tx, actor.userId, entryId));
   }
 }
 

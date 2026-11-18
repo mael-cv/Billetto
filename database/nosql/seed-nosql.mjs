@@ -16,8 +16,8 @@ import { DEFAULT_EVENT_TEMPLATES, DEFAULT_TICKET_TEMPLATES } from './templates.m
 
 const SEP = '\x1f';
 const seed = Number(process.env.SEED ?? '20260916');
-const mongoUrl =
-  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_nosql?authSource=admin';
+const mongoUrl = process.env.MONGO_URL;
+if (!mongoUrl) throw new Error('MONGO_URL absent : lancez « pnpm infra:up » puis « pnpm env:pull »');
 
 // ---------------------------------------------------------------------------
 // Générateur pseudo-aléatoire déterministe (mulberry32) : même SEED => mêmes documents.

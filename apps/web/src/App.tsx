@@ -1,4 +1,6 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { api } from "./lib/api";
 import { ApiError } from "./lib/http";
 import { RequireAuth } from "./lib/auth";
 import { matchRoute, RouterProvider, useRouter } from "./lib/router";
@@ -22,6 +24,7 @@ import { CreateEventPage } from "./pages/CreateEvent";
 import { OrganizerReviewsPage } from "./pages/OrganizerReviews";
 import { OrganizerEventPagePage } from "./pages/OrganizerEventPage";
 import { AdminPage } from "./pages/Admin";
+import { SETUP_KEY, SetupPage, SetupProgress } from "./pages/Setup";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -158,10 +161,44 @@ function Routes() {
   return <NotFound />;
 }
 
+/**
+ * État d'installation. Tant que l'application n'est pas initialisée, l'API ne
+ * répond qu'à l'assistant : toutes les routes y mènent. Ce n'est qu'un confort
+ * d'interface, le verrou est côté serveur.
+ */
+function useSetupStatus() {
+  return useQuery({
+    queryKey: SETUP_KEY,
+    queryFn: api.setupStatus,
+    // Pendant l'installation, l'API redémarre : on réessaie jusqu'à ce qu'elle réponde « prêt ».
+    refetchInterval: (query) => (query.state.data?.etat === "pret" ? false : 2_000),
+    retry: true,
+    retryDelay: 2_000,
+    staleTime: Infinity,
+  });
+}
+
 function Shell() {
-  const { path } = useRouter();
+  const { path, navigate } = useRouter();
   const clean = path.split("?")[0];
   const fullscreen = FULLSCREEN.includes(clean);
+  const setup = useSetupStatus();
+  const etat = setup.data?.etat;
+
+  // Application initialisée : l'assistant n'existe plus. À la fin de
+  // l'installation, on arrive sur la connexion pour utiliser le compte créé.
+  const wasInstalling = useRef(false);
+  useEffect(() => {
+    if (etat === "requis" || etat === "en_cours") wasInstalling.current = true;
+    if (etat === "pret" && (clean === "/setup" || wasInstalling.current)) {
+      wasInstalling.current = false;
+      navigate("/login");
+    }
+  }, [etat, clean, navigate]);
+
+  if (etat === "requis") return <SetupPage />;
+  if (etat === "en_cours") return <SetupProgress />;
+  if (etat === undefined) return null;
 
   return (
     <div className="flex min-h-screen flex-col">

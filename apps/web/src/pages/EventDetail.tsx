@@ -136,6 +136,7 @@ export function EventDetailPage({ slug }: { slug: string }) {
   const { navigate } = useRouter();
   const { setCart, toast } = useStore();
   const { user } = useAuth();
+  const isLoggedIn = user !== null;
   const params = useQueryParams();
   // « gestion » : un organisateur consulte son brouillon avec ses propres droits.
   const scope: Scope = params.get("scope") === "manage" ? "manage" : "public";
@@ -147,14 +148,15 @@ export function EventDetailPage({ slug }: { slug: string }) {
   // avec la durée de consultation à la sortie de la page (écriture explicite POST /activites).
   const eventId = event?.id;
   useEffect(() => {
-    if (!eventId || scope !== "public") return;
+    // Écriture réservée aux comptes connectés (l'API journalise déjà la lecture pour tous).
+    if (!eventId || scope !== "public" || !isLoggedIn) return;
     const started = Date.now();
     return () => {
       void api
         .recordActivity({ type: "vue_evenement", evenementId: eventId, payload: { source: "web", dureeMs: Date.now() - started } })
         .catch(() => undefined);
     };
-  }, [eventId, scope]);
+  }, [eventId, scope, isLoggedIn]);
 
   // Une commande porte sur un seul tarif : choisir une quantité sur un tarif réinitialise les autres.
   const [selection, setSelection] = useState<{ tarifId: number; quantite: number } | null>(null);

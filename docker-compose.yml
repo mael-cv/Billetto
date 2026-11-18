@@ -1,135 +1,202 @@
 name: billetto
 
+# « git clone » puis « docker compose up -d » : aucun fichier à créer.
+#
+# Ce fichier ne contient et n'attend AUCUN secret. Au premier démarrage, le
+# conteneur « bootstrap » génère tous les mots de passe dans deux volumes :
+#   secrets  identifiants d'administration des bases (postgres, mongodb, init, seeder) ;
+#   config   configuration de l'API (compte restreint, secret de session, mode, clés Stripe).
+# L'application s'initialise ensuite depuis le navigateur (https://localhost:3000),
+# avec le jeton affiché par « docker compose logs bootstrap ».
+#
+# Seul le front (HTTPS) est publié. Outils de développement : docker-compose.dev.yml.
+
 services:
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: init
+    image: ${INIT_IMAGE:-billetto-init:local}
+    command: ["node", "database/scripts/bootstrap-config.mjs"]
+    environment:
+      PUBLIC_URL: https://localhost:${WEB_PORT:-3000}
+    volumes:
+      - secrets:/secrets
+      - config:/config
+
   postgres:
     image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-billetto_owner}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-billetto_owner_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-billetto}
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      POSTGRES_USER: billetto_owner
+      POSTGRES_DB: billetto
+      POSTGRES_PASSWORD_FILE: /run/billetto/postgres_password
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database:/database:ro
+      - secrets:/run/billetto:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
 
   mongodb:
     image: mongo:7.0-jammy
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-billetto_mongo}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-billetto_mongo_pass}
-      MONGO_INITDB_DATABASE: ${MONGO_DB:-billetto_nosql}
-    ports:
-      - "${MONGO_PORT:-27017}:27017"
+      MONGO_INITDB_ROOT_USERNAME: billetto_mongo
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/billetto/mongo_password
+      MONGO_INITDB_DATABASE: billetto_nosql
     volumes:
-      - mongo_data:/data/db
+      - mongodb_data:/data/db
       - ./database/nosql:/database/nosql:ro
+      - secrets:/run/billetto:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
 
-  # SMTP de développement : capture tous les e-mails (interface web :8025).
-  mailpit:
-    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
-  pgadmin:
-    image: dpage/pgadmin4:9@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@billetto.org}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-billetto-pgadmin}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-      PGADMIN_CONFIG_CHECK_EMAIL_DELIVERABILITY: "False"
-      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local', 'test', 'internal', 'billetto.local', 'billetto.test']"
-    ports:
-      - "8080:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-      - ./infra/pgadmin/servers.json:/pgadmin4/servers.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # Initialisation automatique au lancement : vérifie/applique migrations SQL, seeds PostgreSQL et templates MongoDB
+  # Migrations SQL, schéma MongoDB, compte MongoDB restreint de l'API, certificat TLS.
   init:
     build:
       context: .
       dockerfile: Dockerfile
       target: init
-    image: ${INIT_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-init:latest}
+    image: ${INIT_IMAGE:-billetto-init:local}
+    command: ["node", "database/scripts/init-auto.mjs"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-billetto_owner}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-billetto_owner_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-billetto}
-      PGHOST: postgres
-      PGPORT: 5432
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-billetto_app_pass}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-Billetto-Demo-2026!}
-      SEED: ${SEED:-20260916}
-      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_nosql}?authSource=admin
+      BILLETTO_ENV_FILE: /secrets/infra.env
+      TLS_CERT_DIR: /certs
+    volumes:
+      - secrets:/secrets:ro
+      - web_certs:/certs
     depends_on:
       postgres:
         condition: service_healthy
       mongodb:
         condition: service_healthy
+
+  # Attend l'assistant de premier démarrage, charge le jeu de démonstration en
+  # mode test, puis crée le premier administrateur. Se termine ensuite.
+  seeder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: init
+    image: ${INIT_IMAGE:-billetto-init:local}
+    command: ["node", "database/scripts/seeder.mjs"]
+    restart: on-failure:3
+    environment:
+      BILLETTO_ENV_FILE: /secrets/infra.env
+      CONFIG_DIR: /config
+    volumes:
+      - secrets:/secrets:ro
+      - config:/config:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
       target: api
-    image: ${API_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-api:latest}
+    image: ${API_IMAGE:-billetto-api:local}
+    # Redémarre seule après l'assistant, pour charger la configuration complétée.
+    restart: unless-stopped
     environment:
-      # Compose est le profil de développement local (HTTP localhost).
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: production
       API_PORT: 3001
-      APP_DATABASE_URL: postgresql://billetto_app:${APP_DB_PASSWORD:-billetto_app_pass}@postgres:5432/${POSTGRES_DB:-billetto}
-      MONGO_URL: mongodb://${MONGO_USER:-billetto_mongo}:${MONGO_PASSWORD:-billetto_mongo_pass}@mongodb:27017/${MONGO_DB:-billetto_nosql}?authSource=admin
-      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-billetto-0123456789abcdef}
-      PAYMENTS_WEBHOOK_SECRET: ${PAYMENTS_WEBHOOK_SECRET:-dev-only-webhook-secret-billetto-0123456789abcdef}
-      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-7200}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
-      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-10}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    ports:
-      - "3001:3001"
+      BILLETTO_ENV_FILE: /config/api.env
+      CONFIG_DIR: /config
+      STRIPE_TEST_KEYS_FILE: /run/billetto/stripe-test-keys.env
+      # Origine publique du front (HTTPS, certificat auto-signé).
+      CORS_ORIGIN: https://localhost:${WEB_PORT:-3000}
+      COOKIE_SECURE: "true"
+      # Un seul saut de confiance : nginx. L'API n'est pas publiée, l'adresse du
+      # client est celle que nginx place dans X-Forwarded-For.
+      TRUST_PROXY: "1"
+    volumes:
+      - config:/config
+      - ./infra/stripe/test-keys.env:/run/billetto/stripe-test-keys.env:ro
+    expose:
+      - "3001"
     depends_on:
       init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/v1/health || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 768m
+
+  # Relais des webhooks Stripe vers l'API (mode test uniquement) : Stripe ne peut
+  # pas joindre une machine locale. Attend que l'assistant ait choisi le mode.
+  stripe-cli:
+    image: stripe/stripe-cli:v1.21.8
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/relay.sh"]
+    volumes:
+      - config:/config:ro
+      - ./infra/stripe/relay.sh:/relay.sh:ro
+    depends_on:
+      api:
+        condition: service_healthy
 
   web:
     build:
       context: .
       dockerfile: Dockerfile
       target: web
-    image: ${WEB_IMAGE:-${DOCKER_USER:-litmaaa}/billetto-web:latest}
+    image: ${WEB_IMAGE:-billetto-web:local}
+    restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "${WEB_PORT:-3000}:8443"
+    volumes:
+      - web_certs:/etc/nginx/certs:ro
     depends_on:
-      - api
+      init:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:8081/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 128m
 
 volumes:
-  pg_data:
-  pgadmin_data:
-  mongo_data:
+  postgres_data:
+  mongodb_data:
+  web_certs:
+  secrets:
+  config:

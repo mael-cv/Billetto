@@ -36,14 +36,16 @@ for (const file of files) {
         `INSERT INTO schema_migrations (version) VALUES ('${file.replace(/'/g, "''")}')`]);
 }
 // Compte applicatif : mot de passe jamais versionné, lu depuis APP_DB_PASSWORD.
-// Passé en variable psql sur l'entrée standard (:'app_password' est échappé par psql).
+// Lu par psql dans son environnement (\getenv) puis échappé par :'role_password' :
+// le mot de passe n'apparaît ni dans le SQL ni dans la ligne de commande.
 const hasAppRole = psql(['-At', '-c', "SELECT 1 FROM pg_roles WHERE rolname = 'billetto_app'"], {
   capture: true,
 }).trim();
 if (hasAppRole) {
   if (process.env.APP_DB_PASSWORD) {
-    psql(['-v', `app_password=${process.env.APP_DB_PASSWORD}`], {
-      input: "ALTER ROLE billetto_app WITH LOGIN PASSWORD :'app_password';\n",
+    psql([], {
+      env: { BILLETTO_ROLE_PASSWORD: process.env.APP_DB_PASSWORD },
+      input: "\\getenv role_password BILLETTO_ROLE_PASSWORD\nALTER ROLE billetto_app WITH LOGIN PASSWORD :'role_password';\n",
     });
     console.log('» billetto_app : LOGIN activé (mot de passe depuis APP_DB_PASSWORD)');
   } else {
@@ -58,8 +60,9 @@ const hasBiRole = psql(['-At', '-c', "SELECT 1 FROM pg_roles WHERE rolname = 'bi
 }).trim();
 if (hasBiRole) {
   if (process.env.READONLY_DB_PASSWORD) {
-    psql(['-v', `bi_password=${process.env.READONLY_DB_PASSWORD}`], {
-      input: "ALTER ROLE billetto_bi WITH LOGIN PASSWORD :'bi_password';\n",
+    psql([], {
+      env: { BILLETTO_ROLE_PASSWORD: process.env.READONLY_DB_PASSWORD },
+      input: "\\getenv role_password BILLETTO_ROLE_PASSWORD\nALTER ROLE billetto_bi WITH LOGIN PASSWORD :'role_password';\n",
     });
     console.log('» billetto_bi : LOGIN activé (mot de passe depuis READONLY_DB_PASSWORD)');
   } else {

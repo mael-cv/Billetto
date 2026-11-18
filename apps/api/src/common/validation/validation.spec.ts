@@ -1,4 +1,4 @@
-import { purchaseSchema } from '../../modules/tickets/presentation/tickets.controller';
+import { holdSchema } from '../../modules/orders/presentation/orders.controller';
 import { createEventSchema, eventRefSchema, listEventsQuerySchema } from '../../modules/events/presentation/events.dto';
 import type { ApiError } from '../errors/http-errors';
 import { escapeLike } from '../serialization';
@@ -13,12 +13,12 @@ describe('validation des entrées', () => {
     expect(paginationSchema.safeParse({ page: '0' }).success).toBe(false);
   });
 
-  it('achat : quantité bornée et champs inconnus refusés', () => {
-    expect(purchaseSchema.parse({ tarifId: '12', quantite: 2 })).toEqual({ tarifId: 12, quantite: 2 });
-    expect(purchaseSchema.safeParse({ tarifId: 12, quantite: 11 }).success).toBe(false);
-    expect(purchaseSchema.safeParse({ tarifId: -1, quantite: 1 }).success).toBe(false);
-    // Affectation de masse : impossible d'imposer utilisateurId ou prix.
-    expect(purchaseSchema.safeParse({ tarifId: 12, quantite: 1, utilisateurId: 99 }).success).toBe(false);
+  it('réservation : quantité bornée et champs inconnus refusés', () => {
+    expect(holdSchema.parse({ tarifId: '12', quantite: 2, modePaiement: 'carte' })).toEqual({ tarifId: 12, quantite: 2, modePaiement: 'carte' });
+    expect(holdSchema.safeParse({ tarifId: 12, quantite: 11, modePaiement: 'carte' }).success).toBe(false);
+    expect(holdSchema.safeParse({ tarifId: -1, quantite: 1, modePaiement: 'carte' }).success).toBe(false);
+    // Affectation de masse : impossible d'imposer utilisateurId, prix ou montant.
+    expect(holdSchema.safeParse({ tarifId: 12, quantite: 1, modePaiement: 'carte', utilisateurId: 99 }).success).toBe(false);
   });
 
   it('tri des événements : liste blanche', () => {
@@ -40,9 +40,9 @@ describe('validation des entrées', () => {
   });
 
   it('ZodPipe : 400 avec le détail des champs', () => {
-    const pipe = new ZodPipe(purchaseSchema);
+    const pipe = new ZodPipe(holdSchema);
     try {
-      pipe.transform({ tarifId: 'abc', quantite: 0 });
+      pipe.transform({ tarifId: 'abc', quantite: 0, modePaiement: 'carte' });
       fail('une erreur était attendue');
     } catch (e) {
       const err = e as ApiError;

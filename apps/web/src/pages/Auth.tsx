@@ -22,7 +22,11 @@ const registerSchema = z.object({
   prenom: z.string().trim().min(1, "Prénom requis").max(80),
   nom: z.string().trim().min(1, "Nom requis").max(80),
   email: z.email("Adresse e-mail invalide").max(254),
-  password: z.string().min(12, "12 caractères minimum").max(128, "128 caractères maximum"),
+  password: z
+    .string()
+    .min(12, "12 caractères minimum")
+    .max(128, "128 caractères maximum")
+    .refine((value) => new Set(value).size >= 5, "Mot de passe trop simple (au moins 5 caractères différents)"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -127,26 +131,25 @@ function LoginFormView() {
 function RegisterFormView() {
   const { register: signUp } = useAuth();
   const { toast } = useStore();
-  const afterLogin = useAfterLogin();
+  const { navigate } = useRouter();
+  const params = useQueryParams();
   const form = useForm<RegisterForm>({ resolver: zodResolver(registerSchema) });
   const { errors } = form.formState;
 
+  // L'API répond de la même façon que l'adresse soit libre ou déjà utilisée, et
+  // n'ouvre pas de session : on renvoie simplement vers la connexion.
   const submit = form.handleSubmit((values) =>
     signUp.mutate(values, {
-      onSuccess: (user) => {
-        toast("Compte créé, bienvenue !", "success");
-        afterLogin(user.role);
+      onSuccess: () => {
+        toast("Inscription enregistrée. Connectez-vous avec vos identifiants.", "success");
+        const next = params.get("next");
+        navigate(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
       },
-      onError: (error) => {
-        applyApiErrors(error, form.setError, ["prenom", "nom", "email", "password"]);
-        if (error instanceof ApiError && error.status === 409) {
-          form.setError("email", { message: "Un compte existe déjà avec cette adresse" });
-        }
-      },
+      onError: (error) => applyApiErrors(error, form.setError, ["prenom", "nom", "email", "password"]),
     }),
   );
 
-  const apiError = signUp.error instanceof ApiError && signUp.error.status !== 409 && !signUp.error.details ? signUp.error : null;
+  const apiError = signUp.error instanceof ApiError && !signUp.error.details ? signUp.error : null;
 
   return (
     <form onSubmit={submit} className="mt-8 space-y-4" noValidate>

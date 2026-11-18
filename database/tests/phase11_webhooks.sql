@@ -118,8 +118,12 @@ BEGIN
         'RLS activée et forcée';
     ASSERT NOT has_table_privilege('billetto_visiteur', 'paiement_webhooks', 'INSERT'),
         'aucune écriture directe par le rôle visiteur';
-    ASSERT NOT has_function_privilege('public', 'traiter_paiement_webhook(text, text, bigint, jsonb)', 'EXECUTE'),
+    ASSERT NOT has_function_privilege('public', 'traiter_paiement_webhook(text, text, bigint, jsonb, bigint)', 'EXECUTE'),
         'fonction inaccessible à PUBLIC';
+    ASSERT NOT has_function_privilege('billetto_visiteur', 'traiter_paiement_webhook(text, text, bigint, jsonb, bigint)', 'EXECUTE'),
+        'fonction inaccessible au rôle visiteur';
+    ASSERT has_function_privilege('billetto_paiement', 'traiter_paiement_webhook(text, text, bigint, jsonb, bigint)', 'EXECUTE'),
+        'fonction réservée au rôle billetto_paiement';
     RAISE NOTICE 'OK sécurité : RLS et privilèges restrictifs';
 END $$;
 

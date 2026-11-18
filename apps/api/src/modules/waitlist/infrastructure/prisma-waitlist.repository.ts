@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 import type { Tx } from '../../../common/database/db-context.service';
-import { toMoney, toNumber } from '../../../common/serialization';
-import type { ConfirmResult } from '../../orders/domain/order';
+import { toNullableNumber, toNumber } from '../../../common/serialization';
 import type { WaitlistEntry, WaitlistQueueItem, WaitlistRepository, WaitlistStatus } from '../domain/waitlist';
 
 interface QueueRow {
@@ -20,13 +18,7 @@ interface EntryRow extends QueueRow {
   tarif: string;
   evenement_id: bigint;
   evenement: string;
-}
-
-interface ConfirmRow {
-  commande_id: bigint;
-  paiement_id: bigint;
-  billet_ids: bigint[];
-  montant_total: Prisma.Decimal;
+  reservation_id: bigint | null;
 }
 
 const toQueueItem = (r: QueueRow): WaitlistQueueItem => ({
@@ -45,6 +37,7 @@ const toEntry = (r: EntryRow): WaitlistEntry => ({
   tarif: r.tarif,
   evenementId: toNumber(r.evenement_id),
   evenement: r.evenement,
+  reservationId: r.statut === 'notifiee' ? toNullableNumber(r.reservation_id) : null,
 });
 
 @Injectable()
@@ -64,20 +57,6 @@ export class PrismaWaitlistRepository implements WaitlistRepository {
     return rows[0] ? toEntry(rows[0]) : null;
   }
 
-  async confirm(tx: Tx, userId: number, entryId: number): Promise<ConfirmResult> {
-    const rows = await tx.$queryRaw<ConfirmRow[]>`
-      SELECT commande_id, paiement_id, billet_ids, montant_total
-      FROM confirmer_liste_attente(${entryId}::bigint, ${userId}::bigint)`;
-    const row = rows[0];
-    if (!row) throw new Error('confirmer_liste_attente n’a renvoyé aucune ligne');
-    return {
-      commandeId: toNumber(row.commande_id),
-      paiementId: toNumber(row.paiement_id),
-      billetIds: row.billet_ids.map(toNumber),
-      montantTotal: toMoney(row.montant_total),
-    };
-  }
-
   async cancel(tx: Tx, userId: number, entryId: number): Promise<void> {
     await tx.$executeRaw`SELECT annuler_liste_attente(${entryId}::bigint, ${userId}::bigint)`;
   }
@@ -88,21 +67,24 @@ export class PrismaWaitlistRepository implements WaitlistRepository {
              la.notifie_a, la.expire_a, la.created_at
       FROM liste_attente la
       WHERE la.tarif_id = ${tarifId}
-      ORDER BY la.created_at, la.id`;
+      ORDER BY la.created_at, la.id
+      LIMIT 500`;
     return rows.map(toQueueItem);
   }
 
-  // Filtre explicite en plus de la RLS : défense en profondeur.
+  // Filtre explicite en plus de la RLS : défense en profondeur. Résultat borné :
+  // les inscriptions les plus récentes d'abord.
   private entries(tx: Tx, userId: number, entryId: number | null): Promise<EntryRow[]> {
     return tx.$queryRaw<EntryRow[]>`
       SELECT la.id, la.tarif_id, t.nom AS tarif, e.id AS evenement_id, e.nom AS evenement,
              la.quantite_souhaitee, la.statut, position_liste_attente(la.id) AS position,
-             la.notifie_a, la.expire_a, la.created_at
+             la.notifie_a, la.expire_a, la.created_at, la.reservation_id
       FROM liste_attente la
       JOIN tarifs t     ON t.id = la.tarif_id
       JOIN evenements e ON e.id = t.evenement_id
       WHERE la.utilisateur_id = ${userId}
         AND (${entryId}::bigint IS NULL OR la.id = ${entryId}::bigint)
-      ORDER BY la.created_at DESC, la.id DESC`;
+      ORDER BY la.created_at DESC, la.id DESC
+      LIMIT 100`;
   }
 }

@@ -16,6 +16,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PricingModule } from './modules/pricing/pricing.module';
+import { ReferentialModule } from './modules/referential/referential.module';
+import { SetupModule } from './modules/setup/setup.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { UsersModule } from './modules/users/users.module';
@@ -33,6 +35,8 @@ export class AppModule {
         MongoModule,
         TemplatesModule,
         AuthModule,
+        SetupModule,
+        ReferentialModule,
         HealthModule,
         EventsModule,
         PricingModule,

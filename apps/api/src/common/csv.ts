@@ -4,14 +4,16 @@
 //   - échappement RFC 4180 (guillemets doublés, champ entre guillemets si besoin) ;
 //   - CRLF entre les lignes ;
 //   - injection de formules neutralisée : une cellule commençant par = + - @
-//     (ou tabulation / retour chariot) est préfixée d'une apostrophe, sinon un
+//     (ou tabulation / retour chariot / saut de ligne), y compris après des
+//     espaces de tête, est préfixée d'une apostrophe, sinon un
 //     nom saisi par un acheteur (« =HYPERLINK(...) ») serait exécuté par le tableur.
 
 export type CsvValue = string | number | boolean | Date | null | undefined;
 
 const SEPARATOR = ';';
 const BOM = String.fromCharCode(0xfeff);
-const FORMULA_START = /^[=+\-@\t\r]/;
+// Testé après retrait des blancs de tête : certains tableurs les ignorent avant d'évaluer la cellule.
+const FORMULA_START = /^[=+\-@\t\r\n]/;
 
 export function csvCell(value: CsvValue): string {
   if (value === null || value === undefined) return '';
@@ -21,7 +23,7 @@ export function csvCell(value: CsvValue): string {
   else if (typeof value === 'number') return String(value);
   else text = value;
 
-  if (FORMULA_START.test(text)) text = `'${text}`;
+  if (FORMULA_START.test(text) || FORMULA_START.test(text.trimStart())) text = `'${text}`;
   return /[";\r\n]/.test(text) || text !== text.trim() ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

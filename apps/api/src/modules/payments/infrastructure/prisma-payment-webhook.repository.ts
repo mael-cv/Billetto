@@ -16,13 +16,15 @@ interface WebhookRow {
 @Injectable()
 export class PrismaPaymentWebhookRepository implements PaymentWebhookRepository {
   async process(tx: Tx, input: PaymentWebhookInput): Promise<PaymentWebhookResult> {
+    // payment.succeeded : type interne ; le montant encaissé est comparé au hold en base (BT035).
     const rows = await tx.$queryRaw<WebhookRow[]>`
       SELECT duplique, commande_id, billet_ids
       FROM traiter_paiement_webhook(
         ${input.eventId}::text,
-        ${input.type}::text,
+        'payment.succeeded'::text,
         ${input.reservationId}::bigint,
-        ${JSON.stringify(input.payload)}::jsonb
+        ${JSON.stringify(input.payload)}::jsonb,
+        ${input.amountCents}::bigint
       )`;
     const row = rows[0];
     if (!row) throw new Error('traiter_paiement_webhook n’a renvoyé aucune ligne');

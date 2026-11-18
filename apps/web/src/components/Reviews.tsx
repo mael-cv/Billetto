@@ -118,7 +118,7 @@ function ReviewItem({ review, canReply, onChanged }: { review: Review; canReply:
   const { toast } = useStore();
   const [reply, setReply] = useState("");
   const [replying, setReplying] = useState(false);
-  const mine = user?.id === review.utilisateurId;
+  const mine = review.estLeMien;
   const remove = useMutation({
     mutationFn: () => api.deleteReview(review.id),
     onSuccess: () => {
@@ -200,7 +200,7 @@ export function ReviewsSection({ event, isOwner }: { event: EventDetail; isOwner
   const [page, setPage] = useState(1);
   const query = useReviews(event.slug, page);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["reviews", event.slug] });
-  const alreadyReviewed = !!user && !!query.data?.items.some((r) => r.utilisateurId === user.id);
+  const alreadyReviewed = !!user && !!query.data?.items.some((r) => r.estLeMien);
 
   return (
     <section className="mt-10" data-testid="reviews">
