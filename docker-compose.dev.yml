@@ -1,0 +1,53 @@
+# Surcouche de DÉVELOPPEMENT — jamais pour une instance livrée ou exposée.
+#   pnpm infra:up      bases publiées sur 127.0.0.1, Mailpit, pgAdmin
+#   pnpm env:pull      copie la configuration générée vers ./.env (API et tests lancés sur l'hôte)
+# Tout est lié à la boucle locale ; aucun identifiant n'est écrit ici.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+
+  mongodb:
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+
+  # API joignable directement sur la boucle locale, en HTTP et en mode
+  # développement (audit automatisé, débogage).
+  api:
+    environment:
+      NODE_ENV: development
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      TRUST_PROXY: "0"
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  # SMTP de développement : capture tous les e-mails (interface web :8025).
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  # pgAdmin en mode serveur (authentification obligatoire). Le compte initial
+  # vient du .env local créé par « pnpm env:pull ».
+  pgadmin:
+    image: dpage/pgadmin4:9@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
+    profiles: [pgadmin]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_CHECK_EMAIL_DELIVERABILITY: "False"
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local', 'test', 'internal', 'billetto.local', 'billetto.test']"
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./infra/pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgadmin_data:

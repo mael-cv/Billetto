@@ -8,7 +8,8 @@
 import { spawnSync } from 'node:child_process';
 import './psql.mjs'; // charge .env
 
-const password = process.env.APP_DB_PASSWORD ?? 'billetto_app_pass';
+const password = process.env.APP_DB_PASSWORD;
+if (!password) throw new Error('APP_DB_PASSWORD absent : lancez « pnpm infra:up » puis « pnpm env:pull »');
 
 // Une invocation = une session. Les commandes sont envoyées sur l'entrée standard.
 function asApp(sql) {
@@ -67,9 +68,44 @@ SELECT 'apres=' || coalesce(current_setting('app.user_id', true), '');`,
     expect: /^apres=$/m,
   },
   {
-    label: 'acheter_billet sans contexte utilisateur → BT013',
+    label: 'acheter_billet refusé au rôle visiteur (billets émis après paiement vérifié uniquement)',
     sql: `BEGIN; SET LOCAL ROLE billetto_visiteur;
 SELECT acheter_billet(2, 1, 1);
+ROLLBACK;`,
+    expect: /42501: permission denied for function acheter_billet/,
+  },
+  {
+    label: 'confirmer_reservation refusé au rôle visiteur',
+    sql: `BEGIN; SET LOCAL ROLE billetto_visiteur;
+SELECT confirmer_reservation(1, 2);
+ROLLBACK;`,
+    expect: /42501: permission denied for function confirmer_reservation/,
+  },
+  {
+    label: 'webhook de paiement refusé au rôle visiteur',
+    sql: `BEGIN; SET LOCAL ROLE billetto_visiteur;
+SELECT * FROM traiter_paiement_webhook('x', 'payment.succeeded', 1, '{}'::jsonb, 0);
+ROLLBACK;`,
+    expect: /42501: permission denied for function traiter_paiement_webhook/,
+  },
+  {
+    label: 'billetto_paiement : aucune lecture de table',
+    sql: `BEGIN; SET LOCAL ROLE billetto_paiement;
+SELECT count(*) FROM reservations;
+ROLLBACK;`,
+    expect: /42501: permission denied for table reservations/,
+  },
+  {
+    label: 'billetto_paiement exécute le webhook (réservation inconnue → BT031)',
+    sql: `BEGIN; SET LOCAL ROLE billetto_paiement;
+SELECT * FROM traiter_paiement_webhook('security-login-inconnu', 'payment.succeeded', -1, '{}'::jsonb, 0);
+ROLLBACK;`,
+    expect: /BT031: réservation -1 introuvable/,
+  },
+  {
+    label: 'creer_reservation sans contexte utilisateur → BT013',
+    sql: `BEGIN; SET LOCAL ROLE billetto_visiteur;
+SELECT creer_reservation(2, 1, 1, 'carte');
 ROLLBACK;`,
     expect: /BT013: contexte utilisateur absent/,
   },

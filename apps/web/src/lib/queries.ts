@@ -14,6 +14,8 @@ export const keys = {
   myWaitlist: ["me", "waitlist"] as const,
   tarifWaitlist: (tarifId: number) => ["waitlist", "tarif", tarifId] as const,
   order: (id: number) => ["order", id] as const,
+  hold: (id: number) => ["me", "hold", id] as const,
+  pendingTransfers: ["analytics", "transfers"] as const,
   analytics: (name: string, ...args: unknown[]) => ["analytics", name, ...args] as const,
   users: (q: string, page: number) => ["users", q, page] as const,
   // Base documentaire MongoDB

@@ -43,10 +43,51 @@ export interface Reservation {
   montantTotal: string;
 }
 
+/** Hold vu par son auteur : état courant et, une fois payé, la commande créée. */
+export interface HoldView extends Reservation {
+  tarif: string | null;
+  evenementId: number | null;
+  evenement: string | null;
+  commandeId: number | null;
+  createdAt: Date;
+}
+
+/** Données du paiement à ouvrir, calculées par PostgreSQL à partir du prix figé du hold. */
+export interface CheckoutPreparation {
+  amountCents: number;
+  quantite: number;
+  tarif: string;
+  evenementId: number;
+  evenement: string;
+  expireA: Date;
+}
+
 export interface ConfirmResult {
   commandeId: number;
-  paiementId: number;
   billetIds: number[];
+}
+
+/** Suite à donner au paiement d'un hold par carte. */
+export type CheckoutResult =
+  | { statut: 'paiement'; url: string }
+  | { statut: 'confirmee'; commandeId: number; billetIds: number[] };
+
+/** Virement attendu, vu par l'organisateur de l'événement : aucune donnée personnelle de l'acheteur. */
+export interface PendingTransfer {
+  id: number;
+  tarif: string;
+  evenementId: number;
+  evenement: string;
+  quantite: number;
+  montantTotal: string;
+  expireA: Date;
+  createdAt: Date;
+}
+
+export interface TransferTarget {
+  evenementId: number;
+  utilisateurId: number;
+  quantite: number;
   montantTotal: string;
 }
 
@@ -58,10 +99,20 @@ export interface OrdersRepository {
   findAny(tx: Tx, orderId: number): Promise<OrderDetail | null>;
   refundAsOwner(tx: Tx, orderId: number): Promise<void>;
   refundAsAdmin(tx: Tx, orderId: number): Promise<void>;
-  /** Pose un hold (creer_reservation) : même verrou anti-survente qu'acheter_billet. */
+  /** Pose un hold (creer_reservation) : verrou anti-survente et plafond par utilisateur. */
   hold(tx: Tx, userId: number, tarifId: number, quantite: number, modePaiement: ModePaiement): Promise<Reservation>;
-  /** Transforme un hold actif et non expiré en commande payée (confirmer_reservation). */
-  confirm(tx: Tx, userId: number, reservationId: number): Promise<ConfirmResult>;
+  listHoldsForBuyer(tx: Tx, userId: number): Promise<HoldView[]>;
+  findHoldForBuyer(tx: Tx, userId: number, reservationId: number): Promise<HoldView | null>;
+  /** preparer_paiement_reservation : vérifie et prolonge le hold, renvoie le montant dû. */
+  prepareCheckout(tx: Tx, userId: number, reservationId: number): Promise<CheckoutPreparation>;
+  /** confirmer_reservation_gratuite : uniquement pour un montant nul (BT035 sinon). */
+  confirmFree(tx: Tx, userId: number, reservationId: number): Promise<ConfirmResult>;
+  cancelHold(tx: Tx, userId: number, reservationId: number): Promise<void>;
+  /** Rôle organisateur (RLS : ses tarifs) ou admin. */
+  listPendingTransfers(tx: Tx): Promise<PendingTransfer[]>;
+  findTransferTarget(tx: Tx, reservationId: number): Promise<TransferTarget | null>;
+  /** valider_virement : organisateur de l'événement ou admin (BT013 sinon). */
+  validateTransfer(tx: Tx, reservationId: number): Promise<ConfirmResult>;
 }
 
 export const ORDERS_REPOSITORY = Symbol('ORDERS_REPOSITORY');

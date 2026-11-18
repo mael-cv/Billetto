@@ -52,3 +52,6 @@ backups/
 
 # Notes de tournage (non livrées)
 /video.md
+
+# État local des parcours Playwright (administrateur créé par l'assistant sur l'instance testée)
+apps/web/e2e/.state/

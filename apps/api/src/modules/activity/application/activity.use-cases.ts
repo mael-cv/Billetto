@@ -21,6 +21,22 @@ export interface TrendingItem extends TrendingScore {
   evenement: EventSummary;
 }
 
+const VIEW_SCORE_CAP = 500;
+
+/** Refuse (404) une activité déclarée pour un événement absent du catalogue public. */
+@Injectable()
+export class AssertPublicEventUseCase {
+  constructor(
+    private readonly db: DbContextService,
+    @Inject(EVENTS_REPOSITORY) private readonly events: EventsRepository,
+  ) {}
+
+  async execute(evenementId: number): Promise<void> {
+    const evenement = await this.db.run(ANONYMOUS, (tx) => this.events.findByRef(tx, { id: evenementId }));
+    if (!evenement) throw notFound('Événement');
+  }
+}
+
 /**
  * Événements tendance : pipeline d'agrégation MongoDB (score pondéré des
  * activités récentes) puis croisement avec PostgreSQL, qui ne renvoie que les
@@ -39,7 +55,9 @@ export class TrendingEventsUseCase {
     const depuis = new Date(Date.now() - jours * 86_400_000);
     const scores = await this.mongo.activites
       .aggregate<TrendingScore>([
-        { $match: { ts: { $gte: depuis }, evenementId: { $ne: null } } },
+        // Seules les activités émises par l'API comptent : ce que déclare un
+        // navigateur (source « client ») ne peut pas fausser le classement.
+        { $match: { ts: { $gte: depuis }, evenementId: { $ne: null }, 'payload.source': { $ne: 'client' } } },
         {
           $group: {
             _id: '$evenementId',
@@ -57,7 +75,11 @@ export class TrendingEventsUseCase {
             achats: 1,
             scans: 1,
             visiteursDistincts: { $size: { $setDifference: ['$visiteurs', [null]] } },
-            score: { $add: ['$vues', { $multiply: ['$achats', 5] }, { $multiply: ['$scans', 2] }] },
+            // Les vues (simple consultation, répétable) sont plafonnées : au-delà,
+            // seuls les achats et les entrées réelles départagent les événements.
+            score: {
+              $add: [{ $min: ['$vues', VIEW_SCORE_CAP] }, { $multiply: ['$achats', 5] }, { $multiply: ['$scans', 2] }],
+            },
           },
         },
         { $sort: { score: -1, evenementId: 1 } },

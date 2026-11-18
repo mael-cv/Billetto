@@ -9,22 +9,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f .env ] && set -a && . ./.env && set +a
 PG_USER="${POSTGRES_USER:-billetto_owner}"; PG_DB="${POSTGRES_DB:-billetto}"
-MG_USER="${MONGO_USER:-billetto_mongo}"; MG_PASS="${MONGO_PASSWORD:-billetto_mongo_pass}"; MG_DB="${MONGO_DB:-billetto_nosql}"
+MG_DB="${MONGO_DB:-billetto_nosql}"
+# Identifiants MongoDB lus dans l'environnement du conteneur (jamais dans la ligne de commande de l'hôte).
+MG_AUTH='-u "$MONGO_INITDB_ROOT_USERNAME" -p "$(cat "$MONGO_INITDB_ROOT_PASSWORD_FILE")" --authenticationDatabase admin'
+MG_COUNTS='print("event_pages="+db.event_pages.countDocuments()+" avis="+db.avis.countDocuments()+" activites="+db.activites.countDocuments())'
 
 dest="${1:-backups/$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "$dest"
 echo "» sauvegarde dans $dest"
 
 docker compose exec -T postgres pg_dump -U "$PG_USER" -d "$PG_DB" -Fc > "$dest/postgres.dump"
-docker compose exec -T mongodb mongodump --quiet -u "$MG_USER" -p "$MG_PASS" --authenticationDatabase admin \
-  --db "$MG_DB" --archive --gzip > "$dest/mongo.archive"
+docker compose exec -T mongodb sh -c "mongodump --quiet $MG_AUTH --db \"\$1\" --archive --gzip" sh "$MG_DB" > "$dest/mongo.archive"
 
 {
   echo "date: $(date -Iseconds)"
   echo "postgres: $(docker compose exec -T postgres psql -U "$PG_USER" -d "$PG_DB" -Atc \
     "SELECT 'evenements='||(SELECT count(*) FROM evenements)||' billets='||(SELECT count(*) FROM billets)||' utilisateurs='||(SELECT count(*) FROM utilisateurs)")"
-  echo "mongodb: $(docker compose exec -T mongodb mongosh --quiet -u "$MG_USER" -p "$MG_PASS" --authenticationDatabase admin "$MG_DB" \
-    --eval 'print("event_pages="+db.event_pages.countDocuments()+" avis="+db.avis.countDocuments()+" activites="+db.activites.countDocuments())')"
+  echo "mongodb: $(docker compose exec -T mongodb sh -c "mongosh --quiet $MG_AUTH \"\$1\" --eval \"\$2\"" sh "$MG_DB" "$MG_COUNTS")"
 } > "$dest/manifest.txt"
 
 ls -l "$dest"

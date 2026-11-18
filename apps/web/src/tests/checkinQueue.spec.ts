@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { acknowledge, enqueue, localVerdict, pending, scannedSignatures, signatureOf } from "../lib/checkinQueue";
+import {
+  acknowledge,
+  clearCheckinStorage,
+  enqueue,
+  localVerdict,
+  pending,
+  scannedSignatures,
+  signatureOf,
+} from "../lib/checkinQueue";
 import type { CheckinManifestEntry } from "../lib/types";
 
 // Environnement node : pas de localStorage, la file retombe sur la mémoire
@@ -53,5 +61,41 @@ describe("file de check-in offline", () => {
   it("files isolées par événement", () => {
     enqueue(201, qr(SIG_A));
     expect(pending(202)).toEqual([]);
+  });
+
+  it("déconnexion : plus aucun QR ni signature en file sur l'appareil", () => {
+    enqueue(301, qr(SIG_A));
+    enqueue(302, qr(SIG_B));
+    clearCheckinStorage();
+    expect(pending(301)).toEqual([]);
+    expect(pending(302)).toEqual([]);
+    expect(scannedSignatures(301).size).toBe(0);
+  });
+
+  it("déconnexion : le stockage du navigateur est vidé des données de check-in uniquement", () => {
+    const store = new Map<string, string>([
+      ["billetto:checkin:7", "{}"],
+      ["billetto:checkin-manifest:7", "[]"],
+      ["billetto:checkin-device", "appareil-abc"],
+      ["autre", "x"],
+    ]);
+    const fake = {
+      get length() {
+        return store.size;
+      },
+      key: (i: number) => [...store.keys()][i] ?? null,
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    const g = globalThis as { localStorage?: unknown };
+    const previous = g.localStorage;
+    g.localStorage = fake;
+    try {
+      clearCheckinStorage();
+    } finally {
+      g.localStorage = previous;
+    }
+    expect([...store.keys()].sort()).toEqual(["autre", "billetto:checkin-device"]);
   });
 });

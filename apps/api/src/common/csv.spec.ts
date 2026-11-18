@@ -22,6 +22,10 @@ describe('export CSV', () => {
     expect(csvCell('+33 6')).toBe("'+33 6");
     expect(csvCell('-1')).toBe("'-1");
     expect(csvCell('@SUM(A1)')).toBe("'@SUM(A1)");
+    // Blancs de tête : certains tableurs les ignorent avant d'évaluer la formule.
+    expect(csvCell(' =1+1')).toBe("' =1+1");
+    expect(csvCell('\n=1+1')).toBe('"\'\n=1+1"');
+    expect(csvCell('  @SUM(A1)')).toBe("'  @SUM(A1)");
     // Un nombre négatif réel n'est pas une saisie utilisateur : conservé.
     expect(csvCell(-1)).toBe('-1');
   });

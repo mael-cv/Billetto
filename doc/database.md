@@ -49,6 +49,8 @@ erDiagram
 | 013 | `evenements.delai_annulation`, `en_ligne`, `fuseau_horaire` ; `emails_sortants` (phase 15) |
 | 014 | `paiement_webhooks` + `traiter_paiement_webhook()` : idempotence des webhooks de paiement (phase 11, numérotée après la 15 car livrée plus tard) |
 | 015 | `utilisateurs.auth_version` et fonctions de changement de mot de passe / validation de version : révocation des sessions JWT |
+| 018 | Premier démarrage : `application_setup` (une seule ligne), `initialiser_application()` (premier administrateur, une seule fois, aucun `GRANT`), `application_initialisee()` |
+| 017 | Durcissement après audit de sécurité : rôle `billetto_paiement`, `traiter_paiement_webhook` (montant vérifié), `valider_virement`, `annuler_reservation`, `preparer_paiement_reservation`, `confirmer_reservation_gratuite` ; plafond de réservations ; `scanner_billet` cloisonné par événement ; `places_restantes` limitée aux tarifs visibles ; verrouillage de compte, `revoquer_sessions`, dernier administrateur protégé |
 
 ## Normalisation
 - **1FN** : valeurs atomiques, pas de listes dans une cellule (pas de `tags = 'vip,concert'`).
@@ -219,13 +221,17 @@ Table complète, identique à `apps/api/src/common/errors/pg-errors.ts` (HTTP et
 | `BT030` | Mode de paiement invalide | 422 | `MODE_PAIEMENT_INVALIDE` | 008 |
 | `BT031` | Réservation introuvable | 404 | `RESERVATION_INTROUVABLE` | 008 |
 | `BT032` | Réservation non active (déjà confirmée, annulée…) | 409 | `RESERVATION_NON_ACTIVE` | 008 |
-| `BT033` | Réservation expirée | 409 | `RESERVATION_EXPIREE` | 008 |
+| `BT033` | Réservation expirée (ou trop ancienne pour ouvrir un paiement) | 409 | `RESERVATION_EXPIREE` | 008, 017 |
+| `BT034` | Trop de places réservées sans paiement par ce compte (10 par tarif, 30 au total) | 409 | `PLAFOND_RESERVATIONS` | 017 |
+| `BT035` | Montant encaissé absent ou différent du prix figé du hold ; hold payant confirmé « gratuitement » | 409 | `MONTANT_INCOHERENT` | 017 |
 | `BT040` | Places disponibles : inscription en liste d'attente inutile | 409 | `PLACES_DISPONIBLES` | 010 |
 | `BT041` | Inscription en liste d'attente introuvable | 404 | `INSCRIPTION_INTROUVABLE` | 010 |
 | `BT042` | Déjà inscrit en liste d'attente | 409 | `DEJA_INSCRIT` | 010 |
 | `BT043` | Aucune offre active (expirée, non notifiée, close) | 409 | `OFFRE_INACTIVE` | 010 |
 | `BT050` | Événement introuvable (check-in, export) | 404 | `EVENEMENT_INTROUVABLE` | 011 |
 | `BT051` | Contenu de QR vide | 422 | `QR_VIDE` | 011 |
+| `BT052` | Identifiant de scan déjà utilisé pour un autre événement | 409 | `SCAN_DEJA_UTILISE` | 017 |
+| `BT060` | Rétrogradation du dernier administrateur | 409 | `DERNIER_ADMINISTRATEUR` | 017 |
 
 L'API s'appuie sur le code, jamais sur le texte du message.
 
@@ -272,7 +278,7 @@ Soit environ +30 à +50 % : une recherche `tarifs → evenements` par ligne ins�
 Les principes communs :
 
 - **Un seul verrou, une seule règle de quota.** Achat direct (`acheter_billet`), hold (`creer_reservation`) et offre de liste d'attente (`notifier_prochain_en_attente`) prennent tous `FOR UPDATE` sur la ligne du tarif, puis comptent avec `places_occupees()`. Une réservation compte tant que `expire_a > now()` : l'expiration est **lazy**, elle ne dépend d'aucun job. La purge (`purger_reservations_expirees`) ne fait que du reporting.
-- **Liste d'attente** : une offre est une réservation à TTL court, donc bloquée par la même règle et confirmée par `confirmer_reservation`. Le **déclencheur canonique unique** est `traiter_liste_attente(tarif)`. Il est idempotent : il recalcule tout sous verrou, ce qui empêche une double offre pour une même place. Il est appelé par les triggers de désistement et par un balayage périodique, qui rattrape les expirations lazy. L'ordre est FIFO strict (`ORDER BY created_at, id … FOR UPDATE SKIP LOCKED`).
+- **Liste d'attente** : une offre est une réservation à TTL court, donc bloquée par la même règle et réglée comme tout autre hold (paiement vérifié, voir la migration 017). Le **déclencheur canonique unique** est `traiter_liste_attente(tarif)`. Il est idempotent : il recalcule tout sous verrou, ce qui empêche une double offre pour une même place. Il est appelé par les triggers de désistement et par un balayage périodique, qui rattrape les expirations lazy. L'ordre est FIFO strict (`ORDER BY created_at, id … FOR UPDATE SKIP LOCKED`).
 - **Check-in** :
   - le doublon est garanti par l'index unique partiel `uq_billets_scans_billet_ok` ; une `unique_violation` est convertie en scan `doublon` relié au premier ;
   - les rejeux offline sont idempotents grâce à `client_scan_id UNIQUE` ;
@@ -280,6 +286,30 @@ Les principes communs :
 - **Dashboard temps réel** : `v_ventes_par_evenement` et `v_remplissage` gagnent `billets_reserves`, `places_liste_attente` et `taux_occupation`. Les colonnes sont ajoutées **en fin de liste**, et `security_invoker` est répété (`CREATE OR REPLACE VIEW` réinitialise les options).
 - **Outbox d'e-mails** : `emails_sortants` est remplie par trigger dans la transaction métier, ce qui exclut tout e-mail pour un achat annulé. Elle est vidée par le job API via `emails_a_envoyer` (`SKIP LOCKED` + bail de 5 min) et `marquer_email` (backoff, échec après 5 tentatives).
 - **Règle multi-tenant (phase 09)** : chaque nouvelle table reçoit sa RLS (`ENABLE` + `FORCE`) dans sa migration de création. Le test `phase16_isolation.sql` le vérifie table par table, avec un garde-fou générique : toute table lisible par un rôle visiteur ou organisateur sans RLS forcée fait échouer la suite.
+
+## Paiement et durcissement (`017_durcissement_pentest.sql`)
+Corrections issues de l'audit de sécurité. Principe : **aucune commande payée n'est créée par un rôle acheteur**.
+
+- **Qui peut émettre des billets.** `acheter_billet`, `confirmer_reservation` et `confirmer_liste_attente` ne sont plus exécutables par les rôles visiteur, organisateur et admin (`REVOKE EXECUTE`). Il reste trois chemins, tous passant par la fonction interne `finaliser_reservation` (aucun `GRANT`) :
+  - `traiter_paiement_webhook` — exécutable **uniquement** par le rôle `billetto_paiement`, que l'API n'endosse qu'après avoir vérifié la signature du prestataire et relu la session de paiement. La fonction compare le montant encaissé (en centimes) au prix figé du hold (`BT035`) et reste idempotente par identifiant d'événement ;
+  - `valider_virement` — organisateur de l'événement concerné ou administrateur (`controler_checkin`, `BT013`), pour un hold en mode « virement » ;
+  - `confirmer_reservation_gratuite` — par l'acheteur, seulement si le montant du hold est nul.
+- **`billetto_paiement`** n'a aucun droit sur les tables : il ne peut qu'exécuter `traiter_paiement_webhook`. Le contexte `app.user_id` de l'appelant est rétabli en sortie de `finaliser_reservation`.
+- **Blocage de stock.** `creer_reservation` plafonne les places en hold actif par compte (10 par tarif, 30 au total, `BT034`), ramène le hold « virement » de 72 h à 24 h et ignore `p_ttl_override` hors session de maintenance. `annuler_reservation` permet à l'acheteur de rendre ses places.
+- **Paiement par carte.** `preparer_paiement_reservation` vérifie le hold, calcule le montant dû et prolonge le hold à 32 minutes (une session de paiement en dure au moins 30), sans dépasser 1 h après sa création : un hold ne peut pas être entretenu indéfiniment.
+- **Check-in.** `scanner_billet` ne renvoie plus le billet, le tarif ni le titulaire pour un billet d'un autre événement, refuse (`BT052`) le rejeu d'un identifiant de scan appartenant à un autre événement, et borne l'heure déclarée par l'appareil à [−7 jours, +5 minutes] (`recu_a`, posée par le serveur, fait foi).
+- **Lecture.** `places_restantes` répond `NULL` pour le tarif d'un brouillon qui n'appartient pas à l'appelant. Le rôle de reporting ne lit plus `billets.code` ni `billets.code_verification`.
+- **Comptes.** `enregistrer_echec_connexion` verrouille un compte 5 minutes après 10 échecs consécutifs ; `revoquer_sessions` invalide les jetons à la déconnexion ; un trigger refuse (`BT060`) la rétrogradation du dernier administrateur.
+- **Session de maintenance.** `session_maintenance()` est vraie pour une session superutilisateur sans rôle endossé ni `app.user_id` (tests SQL, seed). Les plafonds et l'obligation de montant ne s'y appliquent pas ; elle n'est jamais vraie pour `billetto_app`.
+
+Tests : `database/tests/phase17_durcissement.sql`.
+
+## Premier démarrage (`018_setup.sql`)
+L'application démarre sans aucun compte utilisable. L'assistant web recueille le mode et le premier administrateur, mais **l'API n'a aucun droit sur ce qui suit** : elle dépose une demande dans son volume de configuration, et le conteneur `seeder`, seul à se connecter en propriétaire, charge le jeu de démonstration (mode test) ou le référentiel (mode réel), puis appelle `initialiser_application()`.
+
+- `application_setup` ne peut contenir qu'une ligne (clé primaire booléenne contrainte à `true`) ; la fonction prend un verrou exclusif et lève `BT070` au second appel. Rejouer l'assistant, même avec un jeton valide, ne crée donc jamais un second administrateur.
+- `application_initialisee()` est le seul renseignement accessible à `billetto_app`.
+- Le seed vide la table des utilisateurs : l'administrateur est créé après lui, dans la même exécution.
 
 ## Sécurité (`005_security.sql`)
 Rôles, `GRANT`/`REVOKE`, `SECURITY DEFINER`, RLS et vues `security_invoker` : voir [security.md](security.md).

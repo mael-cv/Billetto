@@ -4,6 +4,10 @@ export interface Fixtures {
   orgaA: number;
   orgaB: number;
   userOrgaB: string;
+  /** Comptes créés pour l'exécution (aucun compte préexistant n'est utilisé). */
+  userVisiteur: string;
+  userOrgaA: string;
+  userAdmin: string;
   eventFutur: number;
   tarifQuota5: number;
   tarifConcurrence: number;
@@ -23,17 +27,23 @@ export { email };
 
 /** Données de test isolées par RUN, créées avec la connexion propriétaire. */
 export async function createFixtures(): Promise<Fixtures> {
-  const [{ id: orgaA }] = await owner.$queryRaw<{ id: bigint }[]>`
-    SELECT organisateur_id AS id FROM utilisateurs WHERE email = 'demo-organisateur@billetto.test'`;
+  const [{ id: orgaA }] = await owner.$queryRaw<{ id: bigint }[]>`SELECT min(id) AS id FROM organisateurs`;
   const [{ id: orgaB }] = await owner.$queryRaw<{ id: bigint }[]>`
     SELECT min(id) AS id FROM organisateurs WHERE id <> ${orgaA}`;
   const [{ lieu, type }] = await owner.$queryRaw<{ lieu: bigint; type: bigint }[]>`
     SELECT (SELECT min(id) FROM lieux) AS lieu, (SELECT id FROM type_evenements WHERE nom = 'Rock') AS type`;
 
   const userOrgaB = email('orga-b');
+  const userOrgaA = email('orga-a');
+  const userVisiteur = email('visiteur');
+  const userAdmin = email('admin');
+  const hash = await argon2(TEST_PASSWORD);
   await owner.$executeRaw`
     INSERT INTO utilisateurs (email, password_hash, prenom, nom, role_app, organisateur_id)
-    VALUES (${userOrgaB}, ${await argon2(TEST_PASSWORD)}, 'Orga', 'B', 'organizer', ${orgaB})`;
+    VALUES (${userOrgaB}, ${hash}, 'Orga', 'B', 'organizer', ${orgaB}),
+           (${userOrgaA}, ${hash}, 'Hugo', 'Organisateur', 'organizer', ${orgaA}),
+           (${userVisiteur}, ${hash}, 'Camille', 'Visiteur', 'visitor', NULL),
+           (${userAdmin}, ${hash}, 'Inès', 'Admin', 'admin', NULL)`;
 
   const event = async (organisateur: bigint, slug: string, debut: string, statut: string) => {
     const [row] = await owner.$queryRaw<{ id: bigint }[]>`
@@ -55,7 +65,8 @@ export async function createFixtures(): Promise<Fixtures> {
 
   const eventFutur = await event(orgaA, 'e2e-futur', '30 days', 'published');
   const tarifQuota5 = await tarif(eventFutur, 'Quota 5', 5, '-1 day', '29 days');
-  const tarifConcurrence = await tarif(eventFutur, 'Concurrence', 10, '-1 day', '29 days');
+  // Quota (5) inférieur au plafond de réservations par utilisateur (10) : c'est le quota qui tranche.
+  const tarifConcurrence = await tarif(eventFutur, 'Concurrence', 5, '-1 day', '29 days');
   const tarifAttente = await tarif(eventFutur, 'Attente', 1, '-1 day', '29 days');
   const tarifCheckin = await tarif(eventFutur, 'Checkin', 5, '-1 day', '29 days');
   const tarifLive = await tarif(eventFutur, 'Live', 5, '-1 day', '29 days');
@@ -70,6 +81,9 @@ export async function createFixtures(): Promise<Fixtures> {
     orgaA: Number(orgaA),
     orgaB: Number(orgaB),
     userOrgaB,
+    userVisiteur,
+    userOrgaA,
+    userAdmin,
     eventFutur: Number(eventFutur),
     tarifQuota5: Number(tarifQuota5),
     tarifConcurrence: Number(tarifConcurrence),

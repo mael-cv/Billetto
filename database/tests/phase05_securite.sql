@@ -202,15 +202,28 @@ BEGIN
     PERFORM test_securite.refuse(format('CALL admin_rembourser_commande(%s)', test_securite.id('commande_autre')),
                                  '42501', 'admin_rembourser_commande');
 
-    -- Fonctions métier : pour soi uniquement
+    -- Aucune commande payée sans paiement vérifié (migration 017) : l'achat direct,
+    -- la confirmation d'un hold par l'acheteur et le webhook sont refusés au rôle visiteur.
+    PERFORM test_securite.refuse(format('SELECT acheter_billet(%s, %s, 1)', test_securite.id('visiteur'), test_securite.id('tarif_a')),
+                                 '42501', 'achat direct sans paiement');
+    PERFORM test_securite.refuse(format('SELECT confirmer_reservation(1, %s)', test_securite.id('visiteur')),
+                                 '42501', 'confirmation d''un hold par l''acheteur');
+    PERFORM test_securite.refuse('SELECT * FROM traiter_paiement_webhook(''x'', ''payment.succeeded'', 1, ''{}''::jsonb, 0)',
+                                 '42501', 'webhook de paiement réservé à billetto_paiement');
+
+    -- Achat encaissé en session de maintenance (comme après un paiement vérifié),
+    -- puis retour au rôle visiteur : il voit ses nouveaux billets.
+    PERFORM test_securite.reprendre();
     SELECT * INTO v_achat FROM acheter_billet(test_securite.id('visiteur'), test_securite.id('tarif_a'), 2);
+    PERFORM test_securite.endosser('billetto_visiteur', test_securite.id('visiteur'));
     ASSERT array_length(v_achat.billet_ids, 1) = 2, 'visiteur : achat pour soi';
     ASSERT test_securite.nb(format('SELECT 1 FROM billets WHERE commande_id = %s', v_achat.commande_id)) = 2,
         'visiteur : voit les billets qu''il vient d''acheter';
     RAISE NOTICE 'OK [visiteur] achat pour soi : commande %', v_achat.commande_id;
 
-    PERFORM test_securite.refuse(format('SELECT acheter_billet(%s, %s, 1)', test_securite.id('autre'), test_securite.id('tarif_a')),
-                                 'BT013', 'achat pour le compte d''un autre');
+    -- Fonctions métier : pour soi uniquement
+    PERFORM test_securite.refuse(format('SELECT creer_reservation(%s, %s, 1, ''carte'')', test_securite.id('autre'), test_securite.id('tarif_a')),
+                                 'BT013', 'réservation pour le compte d''un autre');
     PERFORM test_securite.refuse(format('SELECT * FROM billets_utilisateur(%s)', test_securite.id('autre')),
                                  'BT013', 'billets_utilisateur d''un autre');
     ASSERT (SELECT count(*) FROM billets_utilisateur(test_securite.id('visiteur'))) = a.billets_visiteur + 2,

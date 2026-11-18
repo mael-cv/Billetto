@@ -6,7 +6,6 @@ import { idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import {
   CancelWaitlistUseCase,
-  ConfirmWaitlistUseCase,
   JoinWaitlistUseCase,
   ListMyWaitlistUseCase,
   TarifWaitlistUseCase,
@@ -18,13 +17,14 @@ export const joinWaitlistSchema = z.strictObject({
   quantite: z.coerce.number().int().min(1).max(10),
 });
 
+// Une offre (statut notifiee) est une réservation à payer : elle se règle par
+// POST /orders/holds/:reservationId/checkout, comme tout autre hold.
 @Controller('waitlist')
 @Authenticated()
 export class WaitlistController {
   constructor(
     private readonly joinWaitlist: JoinWaitlistUseCase,
     private readonly listMine: ListMyWaitlistUseCase,
-    private readonly confirmWaitlist: ConfirmWaitlistUseCase,
     private readonly cancelWaitlist: CancelWaitlistUseCase,
     private readonly tarifWaitlist: TarifWaitlistUseCase,
   ) {}
@@ -44,12 +44,6 @@ export class WaitlistController {
   @Authenticated('organizer', 'admin')
   queue(@CurrentActor() actor: Actor, @Param('tarifId', new ZodPipe(idSchema)) tarifId: number) {
     return this.tarifWaitlist.execute(actor, tarifId);
-  }
-
-  @Post(':id/confirm')
-  @HttpCode(200)
-  confirm(@CurrentActor() actor: Actor, @Param('id', new ZodPipe(idSchema)) id: number) {
-    return this.confirmWaitlist.execute(actor, id);
   }
 
   @Delete(':id')

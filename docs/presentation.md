@@ -15,9 +15,9 @@ Sommaire : [1. Le projet](#1-le-projet) · [2. Architecture](#2-architecture) ·
 
 | Rôle | Ce qu'il fait | Compte de démonstration |
 |---|---|---|
-| Visiteur (`visitor`) | recherche, fiche événement, achat, billets, remboursement, liste d'attente, **avis** | `demo-visiteur@billetto.test` |
-| Organisateur (`organizer`) | ses événements, tarifs, participants, check-in, tableau de bord, **page éditoriale**, **réponses aux avis**, **courbe d'activité** | `demo-organisateur@billetto.test` |
-| Administrateur (`admin`) | tout voir, changer les rôles, rembourser, purger le journal | `demo-admin@billetto.test` |
+| Visiteur (`visitor`) | recherche, fiche événement, achat, billets, remboursement, liste d'attente, **avis** | inscription libre |
+| Organisateur (`organizer`) | ses événements, tarifs, participants, check-in, tableau de bord, **page éditoriale**, **réponses aux avis**, **courbe d'activité** | rôle attribué par un administrateur |
+| Administrateur (`admin`) | tout voir, changer les rôles, rembourser, purger le journal | créé par l'assistant de premier démarrage |
 
 **Fonctionnalités principales.** Catalogue avec filtres (ville, type et sous-types, prix, dates), achat atomique sans survente (verrou pessimiste, `acheter_billet`), réservations avec TTL, liste d'attente FIFO, webhooks de paiement idempotents, check-in signé HMAC avec rejeu offline, e-mails (outbox), tableau de bord live ; et côté documentaire : pages d'événement enrichies (programme, médias, FAQ), avis des acheteurs avec réponse de l'organisateur, journal d'activité alimentant un classement « Tendances ».
 

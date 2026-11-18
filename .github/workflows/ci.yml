@@ -60,6 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: checks
     timeout-minutes: 30
+    env:
+      # Surcouche de développement : bases publiées sur la boucle locale du runner, Mailpit.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.dev.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -70,33 +73,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @billetto/api prisma:generate
 
-      - name: Environnement de CI (.env à partir de .env.example, secrets éphémères)
+      # Aucun secret dans le dépôt ni dans la CI : le conteneur « bootstrap » les
+      # génère dans des volumes, « env-pull » les copie pour les tests lancés sur le runner.
+      - name: Bases, migrations et configuration générée
         run: |
-          cp .env.example .env
-          PG_PASSWORD="ci-$(openssl rand -hex 12)"
-          APP_PASSWORD="ci-app-$(openssl rand -hex 12)"
-          sed -i \
-            -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASSWORD}|" \
-            -e "s|^PGADMIN_DEFAULT_PASSWORD=.*|PGADMIN_DEFAULT_PASSWORD=ci-$(openssl rand -hex 8)|" \
-            -e "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://billetto_owner:${PG_PASSWORD}@localhost:5433/billetto|" \
-            -e "s|^APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${APP_PASSWORD}|" \
-            -e "s|^APP_DATABASE_URL=.*|APP_DATABASE_URL=postgresql://billetto_app:${APP_PASSWORD}@localhost:5433/billetto|" \
-            -e "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" \
-            -e "s|^PAYMENTS_WEBHOOK_SECRET=.*|PAYMENTS_WEBHOOK_SECRET=$(openssl rand -hex 32)|" \
-            -e "s|^DEMO_PASSWORD=.*|DEMO_PASSWORD=ci-demo-$(openssl rand -hex 12)|" \
-            -e "s|^READONLY_DB_PASSWORD=.*|READONLY_DB_PASSWORD=ci-bi-$(openssl rand -hex 12)|" \
-            -e "s|^SMTP_URL=.*|SMTP_URL=|" \
-            .env
+          docker compose up -d --wait postgres mongodb mailpit
+          docker compose up init
+          node scripts/env-pull.mjs
+          sed -i -e "s|^SMTP_URL=.*|SMTP_URL=|" .env
 
-      - name: PostgreSQL, MongoDB et Mailpit
-        run: docker compose up -d --wait postgres mongodb mailpit
-
-      - name: Migrations et données
-        run: |
-          pnpm db:migrate
-          pnpm db:seed:small
-          pnpm db:seed:demo
-          pnpm db:init
+      - name: Jeu de démonstration
+        run: pnpm db:init
 
       - name: Tests SQL, concurrence et isolation RLS
         run: pnpm db:test

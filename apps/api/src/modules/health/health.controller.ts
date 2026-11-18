@@ -2,9 +2,10 @@ import { Controller, Get, HttpStatus } from '@nestjs/common';
 import { DbContextService } from '../../common/database/db-context.service';
 import { ApiError } from '../../common/errors/http-errors';
 import { MongoService } from '../../common/mongodb/mongo.service';
-import { Public } from '../../auth/presentation/auth.decorators';
+import { AllowDuringSetup, Public } from '../../auth/presentation/auth.decorators';
 
 @Controller('health')
+@AllowDuringSetup()
 export class HealthController {
   constructor(
     private readonly db: DbContextService,

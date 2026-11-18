@@ -1,4 +1,8 @@
+import { useMutation } from "@tanstack/react-query";
+import { api } from "../lib/api";
 import { useQueryParams } from "../lib/hooks";
+import { errorMessage } from "../lib/http";
+import { useStore } from "../lib/store";
 import { formatDateTime } from "../lib/format";
 import { useRouter } from "../lib/router";
 import { HoldCountdown } from "../components/HoldCountdown";
@@ -6,9 +10,9 @@ import { Button, Card, EmptyState, Link } from "../components/ui";
 import { IconClock } from "../components/icons";
 import { Footer, Page } from "../components/Layout";
 
-// Pas de confirmation possible ici : un virement est rapproché manuellement
-// (hors périmètre de cette phase). La réservation expire d'elle-même si le
-// virement n'arrive pas avant expireA (voir confirmer_reservation, BT033).
+// Pas de confirmation possible ici : seul l'organisateur de l'événement (ou un
+// administrateur) valide un virement, une fois les fonds reçus. La réservation
+// expire d'elle-même si elle n'est pas validée avant expireA.
 export function AwaitingTransferPage() {
   const params = useQueryParams();
   const { navigate } = useRouter();
@@ -18,6 +22,15 @@ export function AwaitingTransferPage() {
   const event = params.get("event");
   const tarif = params.get("tarif");
   const quantite = params.get("quantite");
+  const { toast } = useStore();
+  const cancel = useMutation({
+    mutationFn: () => api.cancelHold(reservationId),
+    onSuccess: () => {
+      toast("Réservation annulée, les places sont libérées", "info");
+      navigate("/events");
+    },
+    onError: (error) => toast(errorMessage(error), "error"),
+  });
 
   if (!Number.isInteger(reservationId) || reservationId <= 0 || !expireA)
     return (
@@ -89,10 +102,13 @@ export function AwaitingTransferPage() {
           </p>
         </div>
 
-        <div className="mx-auto mt-8 max-w-lg text-center">
+        <div className="mx-auto mt-8 flex max-w-lg flex-wrap justify-center gap-3">
           <Link to="/tickets">
             <Button variant="outline">Voir mes billets</Button>
           </Link>
+          <Button variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate()}>
+            Annuler la réservation
+          </Button>
         </div>
       </Page>
       <Footer />

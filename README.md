@@ -17,40 +17,52 @@ L'API croise les deux bases : la fiche d'un événement vient de PostgreSQL et s
 |---|---|---|
 | Front (bonus) | React 19, TypeScript, Vite, Tailwind v4 (maquette Figma Make), servi par nginx | `apps/web` |
 | API | NestJS + Fastify, Prisma (`$queryRaw`) pour PostgreSQL, driver officiel `mongodb`, Zod, cookies HttpOnly + CSRF, rate-limit | `apps/api` |
-| Base relationnelle | PostgreSQL 17 — SQL versionné (16 migrations), seed set-based, tests SQL et de concurrence, benchmarks `EXPLAIN` | `database/migrations`, `database/seed`, `database/tests`, `database/benchmarks` |
+| Base relationnelle | PostgreSQL 17 — SQL versionné (18 migrations), seed set-based, tests SQL et de concurrence, benchmarks `EXPLAIN` | `database/migrations`, `database/seed`, `database/tests`, `database/benchmarks` |
 | Base documentaire | MongoDB 7 — 5 collections avec validateurs `$jsonSchema` et index (unique, partiel, texte, TTL), seed déterministe, requêtes `mongosh` | `database/nosql` |
-| Infrastructure | Docker Compose (postgres, mongodb, init, api, web, mailpit, pgadmin), CI GitHub Actions | `docker-compose.yml`, `Dockerfile`, `.github/workflows` |
+| Infrastructure | Docker Compose (bootstrap, postgres, mongodb, init, seeder, api, web en HTTPS, relais de webhooks Stripe), surcouche de développement (mailpit, pgadmin), CI GitHub Actions | `docker-compose.yml`, `docker-compose.dev.yml`, `Dockerfile`, `.github/workflows` |
 
-## Démarrage en une commande
+## Démarrage
 
-Prérequis : Docker Desktop ≥ 24 (Compose v2). Aucun autre outil, aucun fichier `.env` à créer : `docker-compose.yml` contient des valeurs de démonstration, remplacées par un `.env` s'il existe (voir `.env.example`).
+Prérequis : Docker Desktop ≥ 24 (Compose v2). Rien d'autre : aucun fichier à créer, aucun script à lancer.
 
 ```bash
 git clone https://github.com/mael-cv/Billetto.git && cd Billetto
 docker compose up -d
+docker compose logs bootstrap        # affiche le jeton d'installation
 ```
 
-Le conteneur `init` applique les migrations SQL, charge le jeu de données (10 000 billets), crée le schéma MongoDB (validateurs, index) et le peuple (100 pages, ≈ 2 100 avis, ≈ 20 000 activités), puis l'API et le front démarrent. Suivre : `docker compose logs -f init`. Premier lancement ≈ 2 min (build des images) ; relances en quelques secondes (les seeds ne sont rejoués que si une base est vide).
+Ouvrir ensuite <https://localhost:3000> : l'**assistant de premier démarrage** s'affiche (le certificat est auto-signé, le navigateur demande de l'accepter une fois).
 
-| Service | URL | Rôle |
+1. **Jeton d'installation** — celui affiché par `docker compose logs bootstrap`. Il prouve que vous êtes la personne qui a lancé les conteneurs ; il ne sert qu'une fois. Après 5 saisies erronées, un nouveau jeton est émis dans `docker compose logs api`.
+2. **Mode**
+   - **Test** : charge le jeu de démonstration (100 événements, 10 000 billets, avis, activité) et utilise les clés Stripe de test du dépôt (`infra/stripe/test-keys.env`). Aucune carte réelle n'est débitée ; carte de test `4242 4242 4242 4242`, date future et cryptogramme quelconques.
+   - **Réel** : base vide (seul le référentiel des types d'événements est créé), paiements réels avec vos clés Stripe (`sk_live_…` et `whsec_…`), saisies dans l'assistant et vérifiées auprès de Stripe.
+3. **Premier administrateur** — e-mail et mot de passe (12 caractères minimum). C'est le seul compte existant au départ ; il attribue ensuite les rôles d'organisateur depuis la page d'administration.
+
+L'application charge ses données, crée le compte, redémarre l'API puis affiche la page de connexion (moins d'une minute). L'assistant est alors définitivement fermé : le rejouer est refusé par l'API et par la base.
+
+**Aucun secret n'existe dans le dépôt ni sur votre machine.** Au premier démarrage, le conteneur `bootstrap` génère tous les mots de passe dans deux volumes Docker : `secrets` (administration des bases, jamais lisible par l'API) et `config` (configuration de l'API, complétée par l'assistant). `docker compose down -v` efface tout et permet de recommencer.
+
+| Service | Accès | Rôle |
 |---|---|---|
-| Front | <http://localhost:3000> | application React |
-| API | <http://localhost:3001/api/v1> — santé : [`/health`](http://localhost:3001/api/v1/health) | REST, PostgreSQL + MongoDB |
-| pgAdmin | <http://localhost:8080> (`admin@billetto.org` / `billetto-pgadmin`) | serveur « Billetto (lecture seule) » préconfiguré, compte `billetto_bi` (mot de passe `billetto_bi_pass`) |
-| Mailpit | <http://localhost:8025> | boîte SMTP de développement |
-| PostgreSQL | `localhost:5433` (`billetto_owner` / `billetto_owner_pass`, base `billetto`) | 5433 pour ne pas gêner une instance locale |
-| MongoDB | `localhost:27017` (`billetto_mongo` / `billetto_mongo_pass`, base `billetto_nosql`, `authSource=admin`) | |
+| Front + API | <https://localhost:3000> (API sous `/api/v1`, santé : `/api/v1/health`) | **seul port publié**, en HTTPS |
+| API, PostgreSQL, MongoDB | réseau interne de Compose uniquement | non joignables depuis l'hôte ni le réseau |
+| `bootstrap`, `init`, `seeder` | s'exécutent puis s'arrêtent | secrets, migrations et certificat, données et premier administrateur |
+| Relais Stripe (`stripe-cli`) | réseau interne | transmet les webhooks Stripe du mode test à l'API |
 
-Comptes de démonstration (mot de passe `Billetto-Demo-2026!`) : `demo-visiteur@billetto.test` (visiteur), `demo-organisateur@billetto.test` (organisateur), `demo-admin@billetto.test` (administrateur).
-
-Vérifier les données chargées :
+Vérifier les données chargées (les identifiants sont lus dans les conteneurs, jamais saisis) :
 
 ```bash
-docker compose exec postgres psql -U billetto_owner -d billetto -c "SELECT count(*) FROM billets"
-docker compose exec mongodb mongosh -u billetto_mongo -p billetto_mongo_pass --authenticationDatabase admin billetto_nosql --eval "db.activites.countDocuments()"
+docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM billets"'
+docker compose exec mongodb sh -c 'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$(cat "$MONGO_INITDB_ROOT_PASSWORD_FILE")" --authenticationDatabase admin billetto_nosql --eval "db.activites.countDocuments()"'
 ```
 
-Arrêt : `docker compose down` (garde les données) ou `docker compose down -v` (repart de zéro).
+### Paiement
+
+Les billets ne sont émis que lorsque l'API reçoit le webhook Stripe signé **et** a relu auprès de Stripe que la session est payée, pour le bon montant et la bonne réservation. Un paiement par virement est validé par l'organisateur de l'événement (ou un administrateur) depuis son tableau de bord.
+
+- **Mode test** : les clés viennent de `infra/stripe/test-keys.env`, versionné pour que le projet démarre sans saisie. N'y mettre que des clés de test, de préférence restreintes (`rk_test_…`), et les révoquer après usage. Si le fichier est vide, tout fonctionne sauf le paiement par carte, qui répond « non configuré » ; le virement reste disponible.
+- **Mode réel** : Stripe doit pouvoir joindre `https://<votre-domaine>/api/v1/payments/webhook` ; le point de terminaison se déclare dans le tableau de bord Stripe (événement `checkout.session.completed`).
 
 ## Endpoints principaux
 
@@ -58,13 +70,15 @@ Liste complète, codes d'erreur et exemples `curl` : [`doc/api.md`](doc/api.md).
 
 | Méthode | Chemin | Base | Description |
 |---|---|---|---|
-| POST | `/auth/register`, `/auth/login`, `/auth/logout` | SQL (+ journal Mongo) | comptes et sessions (cookie HttpOnly, CSRF) |
+| POST | `/auth/register`, `/auth/login`, `/auth/logout` | SQL (+ journal Mongo) | comptes et sessions (cookie HttpOnly, CSRF, verrouillage après échecs, révocation à la déconnexion) |
 | GET | `/events?q=&ville=&typeId=&from=&to=&prixMax=&sort=` | SQL (+ journal Mongo) | catalogue paginé, filtre par type **et sous-types** (`WITH RECURSIVE`), RLS |
 | GET | `/events/:ref` | **croisé** | détail SQL + template MongoDB ; `ref` = id ou slug |
 | POST / PATCH / DELETE | `/events`, `/events/:id`, `/events/:id/prices`, `/prices/:id` | SQL | gestion par l'organisateur (RLS : ses événements seulement) |
-| POST | `/tickets/purchase` `{ tarifId, quantite }` | SQL (+ journal Mongo) | achat atomique par `acheter_billet` (verrou, quotas, codes `BTxxx`) |
-| GET / POST | `/tickets/me`, `/orders/me`, `/orders/:id/refund`, `/orders/hold`, `/orders/:id/confirm` | SQL | billets, commandes, remboursement, réservation TTL |
-| POST | `/waitlist`, `/waitlist/:id/confirm` · `/checkin/scan`, `/checkin/scan/batch` | SQL (+ journal Mongo) | liste d'attente FIFO, check-in signé HMAC, rejeu offline idempotent |
+| POST | `/orders/hold` `{ tarifId, quantite, modePaiement }` | SQL | réservation atomique par `creer_reservation` (verrou, quotas, plafond par compte, codes `BTxxx`) |
+| POST | `/orders/holds/:id/checkout` · `/payments/webhook` | SQL (+ journal Mongo) | paiement Stripe (mode test) ; billets émis uniquement par le webhook signé, après relecture de la session et contrôle du montant |
+| POST | `/orders/holds/:id/validate-transfer` | SQL (+ journal Mongo) | virement validé par l'organisateur de l'événement ou un admin |
+| GET / POST / DELETE | `/tickets/me`, `/orders/me`, `/orders/:id/refund`, `/orders/holds/me`, `/orders/holds/:id` | SQL | billets, commandes, remboursement, suivi et annulation d'une réservation |
+| POST | `/waitlist` · `/checkin/scan`, `/checkin/scan/batch` | SQL (+ journal Mongo) | liste d'attente FIFO (une offre se règle comme une réservation), check-in signé HMAC, rejeu offline idempotent |
 | GET | `/analytics/summary`, `/analytics/live`, `/analytics/daily-sales` | SQL | vues `v_ventes_par_evenement`, `v_remplissage`, `mv_ventes_quotidiennes` |
 | GET / PUT / DELETE | `/events/:ref/page` | **croisé** | page éditoriale (programme, médias, sections, FAQ) ; écriture réservée au propriétaire |
 | GET / POST | `/events/:ref/avis`, `/events/:id/avis` | **croisé** | avis paginés + stats (pipeline `$group`) ; création si billet payé (403 sinon), un avis par acheteur (409) |
@@ -100,19 +114,25 @@ infra/                             nginx, pgAdmin
 
 ## Développement et tests
 
+Pour lancer l'API, le front et les tests directement sur la machine (hors conteneurs) :
+
 ```bash
-cp .env.example .env                                     # facultatif : surcharger les défauts
-docker compose up -d --wait postgres mongodb mailpit     # bases seules
-pnpm install && pnpm db:init                             # migrations + seeds SQL et MongoDB
-pnpm dev                                                 # web :3000 + api :3001
+pnpm install
+pnpm infra:up      # bases et Mailpit publiés sur 127.0.0.1 uniquement, migrations appliquées
+pnpm env:pull      # copie la configuration générée dans les volumes vers ./.env (ignoré par git)
+pnpm db:init       # jeu de démonstration SQL et MongoDB
+pnpm dev           # web :3000 + api :3001, en mode test, sans assistant
 ```
+
+`pnpm infra:up` ajoute la surcouche `docker-compose.dev.yml` : PostgreSQL (`127.0.0.1:5433`), MongoDB (`127.0.0.1:27017`) et Mailpit (<http://localhost:8025>). pgAdmin est disponible à la demande (`docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile pgadmin up -d pgadmin`, connexion obligatoire avec le compte écrit dans `./.env`, compte SQL en lecture seule `billetto_bi`). Ces outils ne font pas partie de l'instance livrée. Les tests créent leurs propres comptes, avec un mot de passe aléatoire à chaque exécution.
 
 | Commande | Rôle |
 |---|---|
 | `pnpm test` | tests unitaires (API Jest, web Vitest, outil d'audit) |
 | `pnpm db:test` | tests SQL (requêtes, vues, fonctions, triggers, RLS), concurrence (40 achats simultanés), **tests NoSQL** (validateurs, index, explain, requêtes mongosh) |
-| `pnpm test:e2e` | 72 tests de bout en bout de l'API sur les deux bases (dont pages, avis, tendances) |
-| `pnpm test:e2e:web` | parcours Playwright (visiteur, organisateur, admin, sécurité, NoSQL) — si le port 3000 est pris : `WEB_PORT=3100 CORS_ORIGIN=http://localhost:3100 pnpm test:e2e:web` |
+| `pnpm test:e2e` | tests de bout en bout de l'API sur les deux bases (dont paiement par webhook, virement, plafonds, pages, avis, tendances) ; Stripe y est remplacé par un double en mémoire |
+| `pnpm test:e2e:web` | parcours Playwright contre l'instance déployée par `docker compose up -d` (`https://localhost:3000`) : assistant de premier démarrage, visiteur, organisateur, admin, NoSQL, et suite d'attaque dans le navigateur (XSS, redirections, cookies, gardes). Autre instance : `BASE_URL=… COMPOSE_PROJECT=…` |
+| `./scripts/pentest.sh` | campagne d'attaque en boîte noire avec `curl` contre l'instance déployée (assistant, authentification, CSRF, accès aux données, paiement, injections, exposition) ; résultats dans [`doc/pentest.md`](doc/pentest.md) |
 | `pnpm db:queries:nosql` | exécute les 5 requêtes MongoDB de démonstration dans `mongosh` |
 | `pnpm db:benchmark before\|after\|compare` | plans `EXPLAIN (ANALYZE, BUFFERS)` avant/après index (seed FULL) |
 | `pnpm db:seed:full` | jeu de données volumineux (1,8 M billets) |
@@ -122,7 +142,14 @@ Documentation détaillée : [base de données](doc/database.md) · [performance]
 
 ## Sécurité et secrets
 
-Aucun secret réel n'est versionné : les valeurs du `docker-compose.yml` et de `.env.example` sont des défauts de démonstration (l'init affiche un avertissement quand ils sont utilisés). Pour tout autre usage, créer un `.env` avec des secrets générés (`node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`). L'API ne se connecte jamais en superutilisateur : compte `billetto_app` + `SET LOCAL ROLE` par transaction, RLS, `GRANT` colonne par colonne ; le webhook de paiement est signé HMAC-SHA256 (`PAYMENTS_WEBHOOK_SECRET`) et idempotent.
+- **Aucun secret par défaut, aucun identifiant en dur.** Le dépôt ne contient ni mot de passe ni compte prédéfini : tous les secrets sont générés au premier démarrage dans des volumes Docker, les identifiants d'administration des bases ne sont jamais montés dans l'API, et les tests créent leurs comptes à la volée. Seule exception, assumée : `infra/stripe/test-keys.env`, des clés Stripe de test. L'API refuse toute valeur publique connue comme secret de session, et une clé Stripe qui ne correspond pas au mode choisi.
+- **Premier démarrage protégé.** L'assistant exige un jeton à usage unique visible uniquement dans les journaux Docker, limité en débit et remplacé après 5 erreurs. Tant que l'application n'est pas initialisée, aucune autre route ne répond. Le premier administrateur est créé par un conteneur dédié, jamais par l'API, et la base refuse toute seconde initialisation.
+- **Surface exposée minimale.** Seul le front est publié, en HTTPS (HSTS, CSP, en-têtes de sécurité). L'API, PostgreSQL et MongoDB ne sont joignables que sur le réseau interne. pgAdmin et Mailpit n'existent que dans la surcouche de développement, liés à `127.0.0.1`, pgAdmin avec authentification.
+- **Moindre privilège en base.** L'API ne se connecte jamais en superutilisateur : compte `billetto_app` + `SET LOCAL ROLE` par transaction, RLS forcée sur toutes les tables métier, `GRANT` colonne par colonne. Côté MongoDB, l'API utilise un compte limité à `readWrite` sur sa seule base.
+- **Paiement.** Aucune route ne permet à un acheteur de créer une commande payée. Les billets sont émis par le webhook Stripe signé (horodatage contrôlé, rejeu refusé), après relecture de la session auprès de Stripe et contrôle du montant en base, sous un rôle PostgreSQL dédié qui ne peut rien faire d'autre. Un virement est validé par l'organisateur de l'événement.
+- **Abus.** Plafond de places réservées sans paiement par compte, limites de débit par adresse réelle du client (compteurs stricts sur l'authentification et les actions sensibles), verrouillage temporaire d'un compte après des échecs répétés, déconnexion qui révoque les sessions côté serveur, inscription qui ne révèle pas si une adresse a déjà un compte.
+
+Détail des corrections issues de l'audit de sécurité : [`doc/database.md`](doc/database.md) (migrations 017 et 018) et [`doc/api.md`](doc/api.md). Résultats de la campagne d'attaque : [`doc/pentest.md`](doc/pentest.md).
 
 ## Outils d'IA utilisés
 
@@ -133,4 +160,4 @@ Chaque fichier livré a été relu, exécuté et testé par l'auteur, qui en ass
 
 ## Publier les images (facultatif)
 
-`./scripts/publish-dockerhub.sh <pseudo>` (ou `.ps1` sous Windows) construit et pousse `billetto-init`, `billetto-api`, `billetto-web` ; `DOCKER_USER=<pseudo>` dans `.env` permet alors à `docker compose up -d` de tirer les images sans build.
+`./scripts/publish-dockerhub.sh <pseudo>` (ou `.ps1` sous Windows) construit et pousse `billetto-init`, `billetto-api`, `billetto-web`. Pour tirer ces images au lieu de les construire, définir `INIT_IMAGE`, `API_IMAGE` et `WEB_IMAGE` dans l'environnement avant `docker compose up -d`.

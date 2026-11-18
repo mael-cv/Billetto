@@ -13,8 +13,8 @@ try {
 } catch {
   // valeurs par défaut
 }
-const mongoUrl =
-  process.env.MONGO_URL ?? 'mongodb://billetto_mongo:billetto_mongo_pass@localhost:27017/billetto_nosql?authSource=admin';
+const mongoUrl = process.env.MONGO_URL;
+if (!mongoUrl) throw new Error('MONGO_URL absent : lancez « pnpm infra:up » puis « pnpm env:pull »');
 
 const client = new MongoClient(mongoUrl, { serverSelectionTimeoutMS: 5000 });
 await client.connect();

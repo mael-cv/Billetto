@@ -8,6 +8,8 @@ export interface StoredCredentials {
   prenom: string;
   nom: string;
   authVersion: number;
+  /** Compte temporairement verrouillé après des échecs de connexion répétés. */
+  locked: boolean;
 }
 
 export interface NewAccount {
@@ -19,10 +21,15 @@ export interface NewAccount {
 
 export interface CredentialsRepository {
   findByEmail(email: string): Promise<StoredCredentials | null>;
-  /** Crée un compte visitor. Lève une erreur 23505 si l'e-mail existe. */
-  create(account: NewAccount): Promise<number>;
+  /** Crée un compte visitor. Renvoie false si l'e-mail est déjà utilisé. */
+  create(account: NewAccount): Promise<boolean>;
   changePassword(userId: number, passwordHash: string): Promise<void>;
   sessionVersion(userId: number): Promise<number | null>;
+  /** Compte un échec ; au 10e consécutif, le compte est verrouillé 5 minutes. */
+  recordFailedLogin(email: string): Promise<void>;
+  resetFailedLogins(userId: number): Promise<void>;
+  /** Invalide tous les jetons de session du compte (déconnexion). */
+  revokeSessions(userId: number): Promise<void>;
 }
 
 export const CREDENTIALS_REPOSITORY = Symbol('CREDENTIALS_REPOSITORY');

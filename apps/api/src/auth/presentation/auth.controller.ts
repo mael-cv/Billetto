@@ -5,10 +5,11 @@ import { ZodPipe } from '../../common/validation/zod.pipe';
 import { ActivityLogger } from '../../modules/activity/activity-logger.service';
 import { LoginUseCase } from '../application/login.use-case';
 import { ChangePasswordUseCase } from '../application/change-password.use-case';
+import { LogoutUseCase } from '../application/logout.use-case';
 import { RegisterUseCase } from '../application/register.use-case';
 import { SessionTokenService } from '../application/session-token.service';
 import type { Actor } from '../domain/actor';
-import { Authenticated, CurrentActor, Public, SkipCsrf } from './auth.decorators';
+import { AllowDuringSetup, Authenticated, CurrentActor, OptionalAuth, Public, SkipCsrf } from './auth.decorators';
 import { changePasswordSchema, type ChangePasswordDto, type LoginDto, loginSchema, type RegisterDto, registerSchema } from './auth.dto';
 import { clearSessionCookie, issueCsrfToken, setSessionCookie } from './cookies';
 
@@ -27,6 +28,7 @@ export class AuthController {
     private readonly login: LoginUseCase,
     private readonly register: RegisterUseCase,
     private readonly changePassword: ChangePasswordUseCase,
+    private readonly logoutUseCase: LogoutUseCase,
     private readonly tokens: SessionTokenService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly activity: ActivityLogger,
@@ -36,6 +38,7 @@ export class AuthController {
   @Get('csrf')
   @Public()
   @SkipCsrf()
+  @AllowDuringSetup()
   csrf(@Res({ passthrough: true }) reply: FastifyReply) {
     return { csrfToken: issueCsrfToken(reply, this.config) };
   }
@@ -44,26 +47,37 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   async doLogin(@Body(new ZodPipe(loginSchema)) body: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
-    const actor = await this.login.execute(body.email, body.password);
+    let actor: Actor;
+    try {
+      actor = await this.login.execute(body.email, body.password);
+    } catch (err) {
+      // Trace des échecs (sans adresse ni mot de passe) : détection de la force brute.
+      this.activity.record('connexion', { payload: { succes: false } });
+      throw err;
+    }
     this.activity.record('connexion', { utilisateurId: actor.userId, payload: { role: actor.role, succes: true } });
     return this.openSession(actor, reply);
   }
 
+  /**
+   * Réponse identique que l'adresse soit libre ou déjà utilisée, et aucune
+   * session ouverte : l'inscription ne permet pas d'énumérer les comptes.
+   * L'utilisateur se connecte ensuite avec ses identifiants.
+   */
   @Post('register')
   @Public()
   @HttpCode(201)
-  async doRegister(
-    @Body(new ZodPipe(registerSchema)) body: RegisterDto,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ) {
-    const actor = await this.register.execute(body);
-    return this.openSession(actor, reply);
+  async doRegister(@Body(new ZodPipe(registerSchema)) body: RegisterDto) {
+    await this.register.execute(body);
+    return { message: 'Inscription enregistrée. Vous pouvez maintenant vous connecter.' };
   }
 
+  /** Déconnexion : le jeton est révoqué en base (toutes les sessions du compte), pas seulement oublié du navigateur. */
   @Post('logout')
-  @Public()
+  @OptionalAuth()
   @HttpCode(204)
-  logout(@Res({ passthrough: true }) reply: FastifyReply): void {
+  async logout(@CurrentActor() actor: Actor | null, @Res({ passthrough: true }) reply: FastifyReply): Promise<void> {
+    if (actor) await this.logoutUseCase.execute(actor);
     clearSessionCookie(reply, this.config);
   }
 

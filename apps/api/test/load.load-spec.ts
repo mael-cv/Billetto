@@ -1,20 +1,30 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { cleanFixtures, createFixtures, email, type Fixtures } from './fixtures';
-import { Client, DEMO_PASSWORD, owner, startApp, TEST_PASSWORD } from './support';
+import {
+  Client,
+  deliverWebhook,
+  type FakeGateway,
+  installFakeGateway,
+  owner,
+  payHold,
+  sessionIdOf,
+  startApp,
+  TEST_PASSWORD,
+} from './support';
 
 /**
  * Scénario de charge combiné sur un tarif en forte contention, via l'API
  * complète (HTTP → NestJS → PostgreSQL en billetto_app, RLS et fonctions) :
  *   1. N holds simultanés pour QUOTA places ;
- *   2. confirmations concurrentes (chaque hold confirmé 3 fois en parallèle) ;
+ *   2. paiements confirmés par webhook (chaque webhook livré 3 fois en parallèle) ;
  *   3. inscriptions simultanées en liste d'attente ;
  *   4. désistements (remboursements) concurrents + offres non honorées
  *      (expiration forcée) + balayage, comme le job ;
- *   5. réponses aux offres pendant que d'autres tentent d'acheter.
+ *   5. paiement des offres pendant que d'autres tentent de réserver.
  * Après chaque vague : jamais vendus + holds actifs > QUOTA. À la fin : quota
  * exactement rempli, FIFO respecté, dashboard et outbox cohérents avec la base.
  *
- * Pas de webhook de paiement : la Phase 11 n'est pas implémentée (voir todo).
+ * Le prestataire de paiement est remplacé par un double en mémoire (aucun appel à Stripe).
  * Taille réglable : LOAD_USERS (défaut 60, minimum 50).
  */
 const QUOTA = 10;
@@ -25,6 +35,7 @@ const IGNORED_OFFERS = 2;
 
 describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
   let app: NestFastifyApplication;
+  let gateway: FakeGateway;
   let fx: Fixtures;
   let tarif: number;
   let orga: Client;
@@ -55,12 +66,13 @@ describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
   beforeAll(async () => {
     fx = await createFixtures();
     app = await startApp();
+    gateway = installFakeGateway(app);
     const [row] = await owner.$queryRaw<{ id: bigint }[]>`
       INSERT INTO tarifs (evenement_id, nom, prix, quota, date_debut_vente, date_fin_vente)
       VALUES (${fx.eventFutur}, 'Charge', 30, ${QUOTA}, now() - interval '1 day', now() + interval '29 days')
       RETURNING id`;
     tarif = Number(row?.id);
-    orga = await Client.login(app, 'demo-organisateur@billetto.test', DEMO_PASSWORD);
+    orga = await Client.login(app, fx.userOrgaA, TEST_PASSWORD);
 
     // Inscriptions par lots (Argon2id est volontairement coûteux).
     for (let start = 0; start < USERS; start += 10) {
@@ -74,6 +86,9 @@ describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
             nom: String(start + k),
           });
           if (res.statusCode !== 201) throw new Error(`inscription ${start + k} : ${res.statusCode} ${res.body}`);
+          // L'inscription n'ouvre pas de session : connexion explicite.
+          const login = await client.post('/auth/login', { email: email(`charge-${start + k}`), password: TEST_PASSWORD });
+          if (login.statusCode !== 200) throw new Error(`connexion ${start + k} : ${login.statusCode} ${login.body}`);
           return client;
         }),
       );
@@ -99,20 +114,27 @@ describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
     expect(await occupied()).toEqual({ vendus: 0, holds: QUOTA });
   });
 
-  it('2. confirmations concurrentes (3 par hold) → une seule commande par réservation', async () => {
-    const attempts = await Promise.all(
-      [...holds].flatMap(([i, reservation]) =>
-        [0, 1, 2].map(async () => ({ i, res: await user(i).post(`/orders/${reservation}/confirm`) })),
-      ),
+  it('2. paiements confirmés par webhook (3 livraisons simultanées par paiement) → une seule commande par réservation', async () => {
+    const paid = await Promise.all(
+      [...holds].map(async ([i, reservation]) => {
+        const checkout = await user(i).post(`/orders/holds/${reservation}/checkout`);
+        expect(checkout.statusCode).toBe(200);
+        const sessionId = sessionIdOf(checkout.json().url);
+        gateway.pay(sessionId);
+        // Le même événement livré trois fois en parallèle (rejeux du prestataire).
+        const eventId = `evt_charge_${reservation}`;
+        const deliveries = await Promise.all([0, 1, 2].map(() => deliverWebhook(app, sessionId, { eventId })));
+        return { i, reservation, deliveries };
+      }),
     );
-    for (const { i, res } of attempts) {
-      if (res.statusCode === 200) {
-        expect(orders.has(i)).toBe(false); // jamais deux succès pour le même hold
-        orders.set(i, res.json().commandeId);
-      } else {
-        expect(res.statusCode).toBe(409);
-        expect(res.json().error).toBe('RESERVATION_NON_ACTIVE');
-      }
+    for (const { i, reservation, deliveries } of paid) {
+      expect(deliveries.every((d) => d.statusCode === 200)).toBe(true);
+      // Jamais deux traitements pour le même paiement.
+      expect(deliveries.filter((d) => d.json().resultat === 'traite')).toHaveLength(1);
+      expect(deliveries.filter((d) => d.json().resultat === 'doublon')).toHaveLength(2);
+      const status = (await user(i).get(`/orders/holds/${reservation}`)).json();
+      expect(status.statut).toBe('confirmee');
+      orders.set(i, status.commandeId);
     }
     expect(orders.size).toBe(QUOTA);
     const [dup] = await owner.$queryRaw<{ n: bigint }[]>`
@@ -167,9 +189,9 @@ describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
     expect(await occupied()).toEqual({ vendus: QUOTA - REFUNDS, holds: REFUNDS });
   });
 
-  it('5. réponses aux offres pendant des tentatives d’achat direct → aucune place volée', async () => {
-    const offers = await owner.$queryRaw<{ id: bigint; utilisateur_id: bigint }[]>`
-      SELECT id, utilisateur_id FROM liste_attente WHERE tarif_id = ${tarif} AND statut = 'notifiee'`;
+  it('5. paiement des offres pendant des tentatives de réservation → aucune place volée', async () => {
+    const offers = await owner.$queryRaw<{ id: bigint; utilisateur_id: bigint; reservation_id: bigint }[]>`
+      SELECT id, utilisateur_id, reservation_id FROM liste_attente WHERE tarif_id = ${tarif} AND statut = 'notifiee'`;
     const userIdOf = new Map<number, number>();
     const ids = await owner.$queryRaw<{ id: bigint; email: string }[]>`
       SELECT id, email FROM utilisateurs WHERE email LIKE ${email('charge-%')}`;
@@ -178,11 +200,15 @@ describe(`Charge combinée (${USERS} acheteurs, quota ${QUOTA})`, () => {
     const buyers = users.map((_, i) => i).filter((i) => !holds.has(i) && !entries.has(i));
     const [confirms, purchases] = await Promise.all([
       Promise.all(
-        offers.map((o) => user(userIdOf.get(Number(o.utilisateur_id)) ?? -1).post(`/waitlist/${o.id}/confirm`)),
+        offers.map((o) =>
+          payHold(app, gateway, user(userIdOf.get(Number(o.utilisateur_id)) ?? -1), Number(o.reservation_id)),
+        ),
       ),
-      Promise.all(buyers.map((i) => user(i).post('/tickets/purchase', { tarifId: tarif, quantite: 1 }))),
+      Promise.all(
+        buyers.map((i) => user(i).post('/orders/hold', { tarifId: tarif, quantite: 1, modePaiement: 'carte' })),
+      ),
     ]);
-    confirms.forEach((r) => expect(r.statusCode).toBe(200));
+    confirms.forEach((r) => expect(r.billetIds).toHaveLength(1));
     purchases.forEach((r) => {
       expect(r.statusCode).toBe(409);
       expect(r.json().error).toBe('QUOTA_EPUISE');

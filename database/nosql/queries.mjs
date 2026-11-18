@@ -9,11 +9,9 @@ import { readdirSync } from 'node:fs';
 try {
   process.loadEnvFile(new URL('../../.env', import.meta.url));
 } catch {
-  // pas de .env : valeurs par défaut de docker-compose.yml
+  // pas de .env : environnement courant
 }
 
-const user = process.env.MONGO_USER ?? 'billetto_mongo';
-const password = process.env.MONGO_PASSWORD ?? 'billetto_mongo_pass';
 const dbName = process.env.MONGO_DB ?? 'billetto_nosql';
 const filter = process.argv[2];
 
@@ -26,8 +24,10 @@ for (const file of files) {
   console.log(`\n==== ${file} ====`);
   const res = spawnSync(
     'docker',
-    ['compose', 'exec', '-T', 'mongodb', 'mongosh', '--quiet', '-u', user, '-p', password, '--authenticationDatabase', 'admin',
-      dbName, '--file', `/database/nosql/queries/${file}`],
+    // Identifiants repris de l'environnement du conteneur : rien de secret dans la ligne de commande de l'hôte.
+    ['compose', 'exec', '-T', 'mongodb', 'sh', '-c',
+      'mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$(cat "$MONGO_INITDB_ROOT_PASSWORD_FILE")" --authenticationDatabase admin "$1" --file "$2"',
+      'mongosh', dbName, `/database/nosql/queries/${file}`],
     { stdio: 'inherit' },
   );
   if (res.status !== 0) failed++;

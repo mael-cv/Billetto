@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { api } from "./api";
+import { clearCheckinStorage } from "./checkinQueue";
 import { ApiError } from "./http";
 import type { Role, User } from "./types";
 import { useRouter } from "./router";
@@ -36,12 +37,15 @@ export function useAuth() {
     mutationFn: ({ email, password }: { email: string; password: string }) => api.login(email, password),
     onSuccess: onSession,
   });
-  const register = useMutation({ mutationFn: api.register, onSuccess: onSession });
+  // L'inscription n'ouvre pas de session (réponse identique que l'adresse soit libre ou non).
+  const register = useMutation({ mutationFn: api.register });
   const logout = useMutation({
     mutationFn: api.logout,
     onSettled: () => {
       queryClient.clear();
       queryClient.setQueryData(ME_KEY, null);
+      // Appareil partagé : aucune donnée de check-in (QR en file, manifeste) ne reste après la déconnexion.
+      clearCheckinStorage();
     },
   });
 

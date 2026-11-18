@@ -19,7 +19,7 @@ export class MongoService implements OnModuleInit, OnModuleDestroy {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
   async onModuleInit() {
-    const client = new MongoClient(this.config.MONGO_URL, { serverSelectionTimeoutMS: 5000 });
+    const client = new MongoClient(this.config.APP_MONGO_URL, { serverSelectionTimeoutMS: 5000 });
     try {
       await client.connect();
       await client.db().admin().ping();

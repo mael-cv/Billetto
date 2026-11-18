@@ -1,9 +1,17 @@
 import type { Tx } from '../../../common/database/db-context.service';
 
-export interface PaymentWebhookInput {
+/** Événement reçu du prestataire, signature déjà vérifiée. */
+export interface PaymentWebhookEvent {
   eventId: string;
   type: string;
+  sessionId: string;
+}
+
+/** Paiement confirmé auprès du prestataire, à enregistrer en base. */
+export interface PaymentWebhookInput {
+  eventId: string;
   reservationId: number;
+  amountCents: number;
   payload: Record<string, unknown>;
 }
 
@@ -14,6 +22,7 @@ export interface PaymentWebhookResult {
 }
 
 export interface PaymentWebhookRepository {
+  /** Rôle billetto_paiement attendu (DbContextService.asPaymentProcessor). */
   process(tx: Tx, input: PaymentWebhookInput): Promise<PaymentWebhookResult>;
 }
 

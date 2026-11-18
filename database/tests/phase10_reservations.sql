@@ -111,8 +111,8 @@ DECLARE
 BEGIN
     SELECT * INTO r FROM creer_reservation(pg_temp.fx('user'), pg_temp.fx('t_ok'), 1, 'virement');
 
-    ASSERT r.expire_a BETWEEN now() + interval '71 hours' AND now() + interval '73 hours',
-        format('TTL virement ≈ 72h, obtenu %s', r.expire_a - now());
+    ASSERT r.expire_a BETWEEN now() + interval '23 hours' AND now() + interval '25 hours',
+        format('TTL virement ≈ 24h, obtenu %s', r.expire_a - now());
     RAISE NOTICE 'OK hold virement : réservation % (expire %)', r.reservation_id, r.expire_a;
 END $$;
 

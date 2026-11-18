@@ -5,8 +5,9 @@ import { loadConfig } from './common/config/config';
 
 async function bootstrap(): Promise<void> {
   try {
-    // En développement, .env à la racine du monorepo. En conteneur, variables d'environnement.
-    process.loadEnvFile(resolve(__dirname, '../../../.env'));
+    // En conteneur : fichier du volume de configuration (BILLETTO_ENV_FILE), généré au
+    // premier démarrage. En développement : .env à la racine (pnpm env:pull).
+    process.loadEnvFile(process.env.BILLETTO_ENV_FILE ?? resolve(__dirname, '../../../.env'));
   } catch {
     // pas de fichier .env
   }

@@ -1,76 +1,64 @@
 import { expect, test } from "@playwright/test";
+import { createEvent, goToCheckout, payByValidatedTransfer, registerAndLogin } from "./support";
 
 test.describe("Parcours Utilisateur (visiteur -> inscription -> achat -> billet -> remboursement)", () => {
-  test("inscription, découverte, achat d'un billet, consultation et remboursement", async ({ page }) => {
-    const timestamp = Date.now();
-    const email = `visiteur-${timestamp}@test.billetto.local`;
+  test("inscription, découverte, réservation, virement validé, billet et remboursement", async ({ page }) => {
+    const event = await createEvent("Parcours utilisateur");
 
-    // 1. Inscription
-    await page.goto("/#/register");
-    await page.waitForSelector("#prenom");
-    await page.fill("#prenom", "Alice");
-    await page.fill("#nom", "Dupont");
-    await page.fill("#email", email);
-    await page.fill("#password", "Password12345!");
-    await page.click('button[type="submit"]');
-
-    // Redirection automatique (vers /tickets ou /)
+    // 1. Inscription : aucune session ouverte, connexion explicite ensuite.
+    await registerAndLogin(page, "Alice", "Dupont");
     await expect(page).toHaveURL(/\/#\/(tickets|$)/);
 
-    // 2. Découverte du catalogue (recherche d'un événement à venir avec billets)
-    await page.goto("/#/events?q=Tour");
+    // 2. Catalogue
+    await page.goto("/#/events");
     await expect(page.locator("h1")).toContainText("Découvrir");
 
-    const eventCard = page.locator('a[href^="#/events/"]:not(:has-text("Terminé"))').first();
-    await expect(eventCard).toBeVisible({ timeout: 10_000 });
-    await eventCard.click();
-
-    // 3. Page détail événement
-    await expect(page).toHaveURL(/\/#\/events\/.+/);
-
-    // Sélectionner 1 billet via le bouton Ajouter d'un tarif disponible
-    const addBtn = page.locator('button[aria-label="Ajouter"]:not([disabled])').first();
-    await expect(addBtn).toBeVisible({ timeout: 8_000 });
-    await addBtn.click();
-
-    // Cliquer sur Continuer
-    const continueBtn = page.locator('button:has-text("Continuer")').first();
-    await expect(continueBtn).toBeEnabled({ timeout: 5_000 });
-    await continueBtn.click();
-
-    // 4. Page checkout
-    await expect(page).toHaveURL(/\/#\/checkout/);
+    // 3. Fiche de l'événement, sélection d'un billet, page de paiement
+    await goToCheckout(page, event.slug);
     await expect(page.locator("h1")).toContainText("Paiement");
 
-    // Cocher les conditions générales de vente
-    const cgv = page.locator("#cgv");
-    await cgv.check();
+    // 4. Aucun billet tant que le paiement n'est pas confirmé côté serveur.
+    await payByValidatedTransfer(page);
 
-    // Valider le paiement
-    const payBtn = page.locator('button[type="submit"]').filter({ hasText: "Payer" }).first();
-    await expect(payBtn).toBeEnabled();
-    await payBtn.click();
-
-    // 5. Page succès
-    await expect(page).toHaveURL(/\/#\/checkout\/success\?commande=\d+/, { timeout: 10_000 });
-    await expect(page.locator("h1")).toContainText("Commande confirmée");
-
-    // 6. Mes billets
-    const seeTicketsBtn = page.locator('a[href="#/tickets"]').first();
-    await seeTicketsBtn.click();
-
-    await expect(page).toHaveURL(/\/#\/tickets/);
+    // 5. Mes billets : le billet apparaît une fois le virement validé.
+    await page.goto("/#/tickets");
+    await page.reload(); // la liste est mise en cache 30 s côté navigateur
     await expect(page.locator("h1")).toContainText("Mes billets");
+    await expect(page.locator("text=Valide").first()).toBeVisible({ timeout: 15_000 });
 
-    // Billet visible avec badge "Valide"
-    await expect(page.locator("text=Valide").first()).toBeVisible({ timeout: 10_000 });
-
-    // 7. Remboursement de la commande
+    // 6. Remboursement de la commande
     const refundBtn = page.locator('button:has-text("Rembourser")').first();
     await expect(refundBtn).toBeVisible({ timeout: 10_000 });
     await refundBtn.click();
-
-    // Vérifier que le statut passe à Remboursé
     await expect(page.locator("text=Remboursé").first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("paiement par carte : la réservation ne devient jamais une commande sans confirmation du prestataire", async ({ page }) => {
+    const event = await createEvent("Parcours carte");
+    await registerAndLogin(page, "Chloé", "Martin", "carte");
+    await goToCheckout(page, event.slug);
+
+    // La page de paiement du prestataire n'est pas suivie : on vérifie seulement que
+    // le front n'obtient aucune commande en retour de l'ouverture du paiement.
+    let checkoutBody: unknown = null;
+    await page.route("**/api/v1/orders/holds/*/checkout", async (route) => {
+      const response = await route.fetch();
+      checkoutBody = await response.json().catch(() => null);
+      // Réponse neutralisée : pas de redirection hors du site pendant le test.
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "TEST", message: "Paiement non suivi pendant le test" }),
+      });
+    });
+    await page.locator("#cgv").check();
+    await page.locator('button[type="submit"]').filter({ hasText: "Payer" }).first().click();
+    await expect(page.locator('[role="alert"]').first()).toBeVisible({ timeout: 15_000 });
+    expect(JSON.stringify(checkoutBody)).not.toContain("commandeId");
+
+    // Aucune commande, aucun billet.
+    await page.goto("/#/tickets");
+    await expect(page.locator("h1")).toContainText("Mes billets");
+    await expect(page.locator("text=Valide")).toHaveCount(0);
   });
 });

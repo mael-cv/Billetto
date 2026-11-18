@@ -103,6 +103,24 @@ export function acknowledge(evenementId: number, clientScanIds: Iterable<string>
   save(evenementId, { ...stored, pending: stored.pending.filter((s) => !done.has(s.clientScanId)) });
 }
 
+/**
+ * Efface tout ce que le check-in a stocké sur cet appareil : files de scans (QR
+ * complets), signatures validées et manifestes en cache. Appelée à la déconnexion.
+ */
+export function clearCheckinStorage(): void {
+  memory.clear();
+  try {
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const name = localStorage.key(i);
+      if (name && (name.startsWith("billetto:checkin:") || name.startsWith("billetto:checkin-manifest:"))) stale.push(name);
+    }
+    for (const name of stale) localStorage.removeItem(name);
+  } catch {
+    // stockage indisponible : rien n'y a été écrit
+  }
+}
+
 export function pending(evenementId: number): PendingScan[] {
   return load(evenementId).pending;
 }

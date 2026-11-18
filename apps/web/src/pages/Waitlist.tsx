@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { followCheckout } from "../lib/checkout";
 import { formatDateTime } from "../lib/format";
 import { errorMessage } from "../lib/http";
 import { useMyWaitlist } from "../lib/queries";
@@ -18,9 +19,9 @@ const STATUS: Record<WaitlistStatus, ["success" | "warning" | "danger" | "muted"
   annulee: ["muted", "Désinscrit"],
 };
 
-// Le délai affiché est indicatif : confirmer_liste_attente revérifie
-// l'expiration côté serveur (BT043), et une offre non confirmée passe
-// automatiquement à l'inscrit suivant.
+// Le délai affiché est indicatif : l'API revérifie l'expiration au moment du
+// paiement, et une offre non réglée passe automatiquement à l'inscrit suivant.
+// Une offre est une réservation : elle se paie comme tout autre achat.
 export function WaitlistPage() {
   const { navigate } = useRouter();
   const { toast } = useStore();
@@ -33,11 +34,14 @@ export function WaitlistPage() {
   };
 
   const confirm = useMutation({
-    mutationFn: (entry: WaitlistEntry) => api.confirmWaitlist(entry.id),
-    onSuccess: () => {
-      toast("Paiement accepté, vos billets sont prêts", "success");
+    mutationFn: (entry: WaitlistEntry) => {
+      if (entry.reservationId === null) throw new Error("Offre indisponible");
+      return api.checkoutHold(entry.reservationId);
+    },
+    onSuccess: (result) => {
+      if (result.statut === "confirmee") toast("Réservation confirmée, vos billets sont prêts", "success");
       refresh();
-      navigate("/tickets");
+      followCheckout(result, navigate);
     },
     onError: (error) => {
       toast(errorMessage(error), "error");
@@ -101,8 +105,11 @@ export function WaitlistPage() {
                     </div>
                   )}
                   <div className="mt-4 flex gap-2">
-                    <Button onClick={() => confirm.mutate(e)} disabled={confirm.isPending}>
-                      Confirmer et payer
+                    <Button
+                      onClick={() => confirm.mutate(e)}
+                      disabled={confirm.isPending || confirm.isSuccess || e.reservationId === null}
+                    >
+                      Payer ma place
                     </Button>
                     <Button variant="outline" onClick={() => cancel.mutate(e)} disabled={cancel.isPending}>
                       Laisser ma place

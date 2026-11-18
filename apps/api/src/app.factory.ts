@@ -10,7 +10,27 @@ import { CSRF_HEADER } from './auth/presentation/cookies';
 import type { AppConfig } from './common/config/config';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 
-const AUTH_ROUTES = /^\/api\/v1\/auth\/(login|register|password)$/;
+type Bucket = 'auth' | 'sensitive' | 'api';
+
+/**
+ * Compteurs stricts, indexés par la route RÉSOLUE par le routeur (méthode + motif),
+ * jamais par l'URL brute : un chemin encodé (/auth/%6cogin) vise le même compteur.
+ */
+const STRICT_ROUTES: Record<string, Bucket> = {
+  'POST /api/v1/auth/login': 'auth',
+  'POST /api/v1/auth/register': 'auth',
+  'POST /api/v1/auth/password': 'auth',
+  // Assistant de premier démarrage : mêmes limites que l'authentification (jeton à deviner).
+  'POST /api/v1/setup': 'auth',
+  'POST /api/v1/orders/hold': 'sensitive',
+  'POST /api/v1/orders/holds/:id/checkout': 'sensitive',
+  'POST /api/v1/waitlist': 'sensitive',
+  'POST /api/v1/activites': 'sensitive',
+};
+
+function bucketOf(req: FastifyRequest): Bucket {
+  return STRICT_ROUTES[`${req.method} ${req.routeOptions?.url ?? ''}`] ?? 'api';
+}
 
 /** Fonctionnalités navigateur inutiles à une API JSON (non géré par helmet). */
 export const PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()';
@@ -24,7 +44,9 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
     requestTimeout: 30_000,
     maxParamLength: 128,
     http: { maxHeaderSize: 16 * 1024 },
-    trustProxy: false,
+    // 0 : l'adresse TCP fait foi. N : seuls les N derniers sauts de X-Forwarded-For
+    // (ceux ajoutés par nos proxys) sont crus ; ce que le client envoie est ignoré.
+    trustProxy: config.TRUST_PROXY === 0 ? false : (_address: string, hop: number) => hop < config.TRUST_PROXY,
     // Un appelant ne peut pas choisir l'identifiant repris dans les logs/erreurs.
     requestIdHeader: false,
     genReqId: () => randomUUID(),
@@ -71,10 +93,14 @@ export async function createApp(config: AppConfig): Promise<NestFastifyApplicati
   await app.register(rateLimit, {
     global: true,
     timeWindow: '1 minute',
-    // Compteur séparé et plus strict pour login / register (force brute).
-    keyGenerator: (req: FastifyRequest) => `${req.ip}:${AUTH_ROUTES.test(req.url.split('?')[0] ?? '') ? 'auth' : 'api'}`,
-    max: (req: FastifyRequest) =>
-      AUTH_ROUTES.test(req.url.split('?')[0] ?? '') ? config.RATE_LIMIT_AUTH_MAX : config.RATE_LIMIT_MAX,
+    // Compteurs séparés et plus stricts : authentification (force brute) et
+    // actions sensibles (blocage de stock, remplissage du journal).
+    keyGenerator: (req: FastifyRequest) => `${req.ip}:${bucketOf(req)}`,
+    max: (req: FastifyRequest) => {
+      const bucket = bucketOf(req);
+      if (bucket === 'auth') return config.RATE_LIMIT_AUTH_MAX;
+      return bucket === 'sensitive' ? config.RATE_LIMIT_SENSITIVE_MAX : config.RATE_LIMIT_MAX;
+    },
     errorResponseBuilder: (_req, context) => ({
       statusCode: 429,
       error: 'TROP_DE_REQUETES',

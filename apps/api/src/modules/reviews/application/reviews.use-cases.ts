@@ -14,7 +14,8 @@ import type { CreateReviewDto, UpdateReviewDto } from '../presentation/reviews.d
 export interface ReviewView {
   id: string;
   evenementId: number;
-  utilisateurId: number;
+  /** Vrai pour l'auteur connecté. L'identifiant de l'auteur n'est jamais exposé. */
+  estLeMien: boolean;
   prenom: string;
   note: number;
   titre?: string;
@@ -36,10 +37,10 @@ export interface ReviewListResult extends Page<ReviewView> {
   stats: ReviewStats;
 }
 
-export const toReviewView = (doc: AvisDocument): ReviewView => ({
+export const toReviewView = (doc: AvisDocument, viewerId: number | null): ReviewView => ({
   id: String(doc._id),
   evenementId: doc.evenementId,
-  utilisateurId: doc.utilisateurId,
+  estLeMien: viewerId !== null && doc.utilisateurId === viewerId,
   prenom: doc.utilisateur.prenom,
   note: doc.note,
   ...(doc.titre !== undefined ? { titre: doc.titre } : {}),
@@ -56,6 +57,24 @@ interface StatsRow {
   avecReponse: number;
   notes: number[];
 }
+
+/** Billet payé de cet acheteur pour cet événement (sous le rôle acheteur : RLS sur ses propres billets). */
+async function hasPaidTicket(db: DbContextService, userId: number, evenementId: number): Promise<boolean> {
+  const rows = await db.asBuyer(userId, (tx) =>
+    tx.$queryRaw<{ ok: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM billets b
+        JOIN commandes c ON c.id = b.commande_id AND c.statut = 'paid'
+        JOIN tarifs t    ON t.id = b.tarif_id
+        WHERE b.utilisateur_id = ${userId} AND t.evenement_id = ${evenementId}
+      ) AS ok`,
+  );
+  return rows[0]?.ok === true;
+}
+
+const ticketRequired = () =>
+  new ApiError(HttpStatus.FORBIDDEN, 'BILLET_REQUIS', 'Un billet payé pour cet événement est nécessaire pour laisser un avis');
 
 /** Pipeline d'agrégation : moyenne, distribution 1..5 et taux de réponse d'un événement. */
 export async function computeStats(mongo: MongoService, evenementId: number): Promise<ReviewStats> {
@@ -100,6 +119,7 @@ export class ListReviewsUseCase {
     ref: { id: number } | { slug: string },
     filters: { noteMin?: number; sansReponse?: boolean },
     pagination: Pagination,
+    viewerId: number | null,
   ): Promise<ReviewListResult> {
     const evenement = await this.db.run(ANONYMOUS, (tx) => this.events.findByRef(tx, ref));
     if (!evenement) throw notFound('Événement');
@@ -113,7 +133,7 @@ export class ListReviewsUseCase {
       this.mongo.avis.countDocuments(filter),
       computeStats(this.mongo, evenement.id),
     ]);
-    return { ...toPage(items.map(toReviewView), total, pagination), stats };
+    return { ...toPage(items.map((doc) => toReviewView(doc, viewerId)), total, pagination), stats };
   }
 }
 
@@ -131,19 +151,7 @@ export class CreateReviewUseCase {
   ) {}
 
   async execute(actor: Actor, evenementId: number, input: CreateReviewDto): Promise<ReviewView> {
-    const rows = await this.db.asBuyer(actor.userId, (tx) =>
-      tx.$queryRaw<{ ok: boolean }[]>`
-        SELECT EXISTS (
-          SELECT 1
-          FROM billets b
-          JOIN commandes c ON c.id = b.commande_id AND c.statut = 'paid'
-          JOIN tarifs t    ON t.id = b.tarif_id
-          WHERE b.utilisateur_id = ${actor.userId} AND t.evenement_id = ${evenementId}
-        ) AS ok`,
-    );
-    if (!rows[0]?.ok) {
-      throw new ApiError(HttpStatus.FORBIDDEN, 'BILLET_REQUIS', 'Un billet payé pour cet événement est nécessaire pour laisser un avis');
-    }
+    if (!(await hasPaidTicket(this.db, actor.userId, evenementId))) throw ticketRequired();
     const doc: Omit<AvisDocument, '_id'> = {
       evenementId,
       utilisateurId: actor.userId,
@@ -155,26 +163,31 @@ export class CreateReviewUseCase {
       createdAt: new Date(),
     };
     const { insertedId } = await this.mongo.avis.insertOne(doc);
-    return toReviewView({ ...doc, _id: insertedId });
+    return toReviewView({ ...doc, _id: insertedId }, actor.userId);
   }
 }
 
 @Injectable()
 export class UpdateReviewUseCase {
-  constructor(private readonly mongo: MongoService) {}
+  constructor(
+    private readonly db: DbContextService,
+    private readonly mongo: MongoService,
+  ) {}
 
   async execute(actor: Actor, id: string, input: UpdateReviewDto): Promise<ReviewView> {
     const _id = new ObjectId(id);
     const existing = await this.mongo.avis.findOne({ _id });
     if (!existing) throw notFound('Avis');
     if (existing.utilisateurId !== actor.userId) throw forbidden();
+    // Même règle qu'à la création : un billet remboursé ne permet plus de réécrire l'avis.
+    if (!(await hasPaidTicket(this.db, actor.userId, existing.evenementId))) throw ticketRequired();
     const updated = await this.mongo.avis.findOneAndUpdate(
       { _id },
       { $set: { ...input, updatedAt: new Date() } },
       { returnDocument: 'after' },
     );
     if (!updated) throw notFound('Avis');
-    return toReviewView(updated);
+    return toReviewView(updated, actor.userId);
   }
 }
 
@@ -212,7 +225,7 @@ export class ReplyReviewUseCase {
       { returnDocument: 'after' },
     );
     if (!updated) throw notFound('Avis');
-    return toReviewView(updated);
+    return toReviewView(updated, actor.userId);
   }
 }
 
@@ -236,7 +249,7 @@ export class ListOrganizerReviewsUseCase {
       this.mongo.avis.countDocuments(filter),
     ]);
     return toPage(
-      items.map((doc) => ({ ...toReviewView(doc), evenement: noms.get(doc.evenementId) ?? '' })),
+      items.map((doc) => ({ ...toReviewView(doc, actor.userId), evenement: noms.get(doc.evenementId) ?? '' })),
       total,
       pagination,
     );

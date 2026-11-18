@@ -1,11 +1,16 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import type { Actor } from '../../../auth/domain/actor';
-import { Authenticated, CurrentActor, OptionalAuth, Public } from '../../../auth/presentation/auth.decorators';
+import { Authenticated, CurrentActor, Public } from '../../../auth/presentation/auth.decorators';
 import { dateSchema, idSchema } from '../../../common/validation/schemas';
 import { ZodPipe } from '../../../common/validation/zod.pipe';
 import { ActivityLogger } from '../activity-logger.service';
-import { EventActivitySeriesUseCase, PurgeActivityUseCase, TrendingEventsUseCase } from '../application/activity.use-cases';
+import {
+  AssertPublicEventUseCase,
+  EventActivitySeriesUseCase,
+  PurgeActivityUseCase,
+  TrendingEventsUseCase,
+} from '../application/activity.use-cases';
 
 export const trendingQuerySchema = z.strictObject({
   jours: z.coerce.number().int().min(1).max(90).default(7),
@@ -21,7 +26,14 @@ export const seriesQuerySchema = z.strictObject({
 export const clientActivitySchema = z.strictObject({
   type: z.enum(['vue_evenement', 'recherche']),
   evenementId: idSchema.optional(),
-  payload: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).default({}),
+  // Clés simples (ni « $ » ni « . » : elles ne peuvent pas perturber une agrégation), 10 au plus.
+  payload: z
+    .record(
+      z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/),
+      z.union([z.string().max(200), z.number().finite(), z.boolean()]),
+    )
+    .refine((value) => Object.keys(value).length <= 10, '10 clés au maximum')
+    .default({}),
 });
 
 export const purgeQuerySchema = z.strictObject({ avant: dateSchema });
@@ -32,6 +44,7 @@ export class ActivityController {
     private readonly trending: TrendingEventsUseCase,
     private readonly series: EventActivitySeriesUseCase,
     private readonly purge: PurgeActivityUseCase,
+    private readonly visibleEvent: AssertPublicEventUseCase,
     private readonly activity: ActivityLogger,
   ) {}
 
@@ -42,13 +55,18 @@ export class ActivityController {
     return this.trending.execute(query.jours, query.limit);
   }
 
-  /** Écriture explicite depuis le front (vue de page, recherche). */
+  /**
+   * Écriture explicite depuis le front (vue de page, recherche) : réservée aux
+   * comptes connectés, pour un événement visible du catalogue. Ces documents
+   * (source « client ») ne comptent pas dans le classement des tendances.
+   */
   @Post('activites')
   @HttpCode(201)
-  @OptionalAuth()
-  async record(@CurrentActor() actor: Actor | null, @Body(new ZodPipe(clientActivitySchema)) body: z.infer<typeof clientActivitySchema>) {
+  @Authenticated()
+  async record(@CurrentActor() actor: Actor, @Body(new ZodPipe(clientActivitySchema)) body: z.infer<typeof clientActivitySchema>) {
+    if (body.evenementId !== undefined) await this.visibleEvent.execute(body.evenementId);
     const id = await this.activity.recordNow(body.type, {
-      utilisateurId: actor?.userId ?? null,
+      utilisateurId: actor.userId,
       evenementId: body.evenementId ?? null,
       payload: { ...body.payload, source: 'client' },
     });

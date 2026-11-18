@@ -11,6 +11,7 @@ import { DashboardShell, StatCard } from "../components/dashboard";
 import { IconCalendar, IconChart, IconPlus, IconTicket } from "../components/icons";
 import { Footer } from "../components/Layout";
 import { LiveDashboardSection } from "../components/LiveDashboard";
+import { PendingTransfers } from "../components/PendingTransfers";
 import { OrderStatusBadge } from "./OrganizerEvents";
 
 const DAY = 86_400_000;
@@ -112,6 +113,8 @@ export function OrganizerDashboardPage() {
         }
       >
         <LiveDashboardSection />
+
+        <PendingTransfers />
 
         {summary.isError ? (
           <ErrorState onRetry={() => void summary.refetch()} />
