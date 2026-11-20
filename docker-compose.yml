@@ -157,7 +157,7 @@ services:
   # Relais des webhooks Stripe vers l'API (mode test uniquement) : Stripe ne peut
   # pas joindre une machine locale. Attend que l'assistant ait choisi le mode.
   stripe-cli:
-    image: stripe/stripe-cli:v1.21.8
+    image: stripe/stripe-cli:v1.55.11
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/relay.sh"]
     volumes:
