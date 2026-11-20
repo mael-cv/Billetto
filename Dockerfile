@@ -1,6 +1,6 @@
 # Images de base épinglées par digest (reproductibilité / supply chain) ;
 # Dependabot (écosystème docker) propose les mises à jour.
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS deps
 # OpenSSL requis par Prisma et postgresql-client pour exécuter les migrations psql.
 RUN apk add --no-cache openssl postgresql-client && corepack enable
 WORKDIR /repo
@@ -27,7 +27,7 @@ RUN pnpm --filter @billetto/api deploy --prod --legacy /out \
  && dst=$(readlink -f /out/node_modules/@prisma/client)/../../.prisma \
  && mkdir -p "$dst" && cp -r "$src" "$dst/client"
 
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS api
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS api
 RUN apk add --no-cache openssl
 WORKDIR /app
 # Fichiers appartenant à root : l'utilisateur node ne peut pas modifier le code.
